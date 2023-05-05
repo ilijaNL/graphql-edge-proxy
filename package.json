@@ -1,0 +1,62 @@
+{
+  "name": "@graphql-edge/proxy",
+  "author": "IlijaNL",
+  "version": "0.0.0",
+  "types": "lib/index.d.ts",
+  "main": "lib/index.js",
+  "files": [
+    "./lib",
+    "CHANGELOG.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ilijaNL/graphql-edge-proxy.git"
+  },
+  "keywords": [
+    "graphql",
+    "security",
+    "nextjs",
+    "proxy",
+    "workers",
+    "serverless",
+    "edge",
+    "functions"
+  ],
+  "bugs": {
+    "url": "https://github.com/ilijaNL/graphql-edge-proxy/issues"
+  },
+  "homepage": "https://github.com/ilijaNL/graphql-edge-proxy#readme",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint ./src",
+    "dev": "tsc --watch",
+    "tc": "tsc --noEmit",
+    "ci:publish": "yarn build && changeset publish",
+    "test": "tap --ts --no-check-coverage  tests/*.test.ts",
+    "posttest": "tap --coverage-report=html --no-check-coverage"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "sideEffects": false,
+  "devDependencies": {
+    "@changesets/cli": "2.26.0",
+    "@types/node": "^16.0.0",
+    "@types/tap": "^15.0.8",
+    "@typescript-eslint/eslint-plugin": "^5.58.0",
+    "@typescript-eslint/parser": "^5.58.0",
+    "eslint": "^8.4.1",
+    "eslint-config-prettier": "^8.4.0",
+    "tap": "^16.3.4",
+    "ts-node": "^10.7.0",
+    "tsup": "^6.6.0",
+    "typescript": "^4.9.0"
+  },
+  "dependencies": {
+    "@graphql-tools/documents": "^0.1.0",
+    "@whatwg-node/fetch": "^0.8.8",
+    "graphql": "^16.6.0"
+  }
+}

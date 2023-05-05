@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "master"
+    paths-ignore:
+      - 'docs/**'
+      - 'examples/**'
+      - '*.md'
+  pull_request:
+    branches:
+      - "master"
+    paths-ignore:
+      - 'docs/**'
+      - 'examples/**'
+      - '*.md'
+
+permissions:
+  contents: read  # Required when overriding permissions
+  pull-requests: write  # <== Add this to allow action to modify your PR
+
+jobs:
+  # Label of the container job
+  test:
+    # Containers must run in Linux based operating systems
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [16.x, 18.x]
+
+    # Service containers to run with `container-job`
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'yarn'
+      - run: yarn install --frozen-lockfile
+      - run: yarn lint
+      - run: yarn tc
+      - run: yarn test
+      - name: ✅ Upload coverage to Codecov
+        uses: codecov/codecov-action@v3

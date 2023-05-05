@@ -1,0 +1,34 @@
+{
+  "name": "nextjs",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "gen": "graphql-codegen",
+    "dev": "concurrently \"next dev\" \"graphql-codegen --watch\""
+  },
+  "dependencies": {
+    "@graphql-edge/proxy": "file:../..",
+    "@types/node": "18.15.11",
+    "@types/react": "18.0.32",
+    "@types/react-dom": "18.0.11",
+    "@whatwg-node/fetch": "^0.8.5",
+    "@whatwg-node/server": "^0.7.5",
+    "eslint": "8.37.0",
+    "eslint-config-next": "13.2.4",
+    "next": "13.2.4",
+    "react": "18.2.0",
+    "react-dom": "18.2.0",
+    "typescript": "5.0.3"
+  },
+  "devDependencies": {
+    "@graphql-codegen/cli": "^3.2.2",
+    "@graphql-codegen/typescript": "^3.0.3",
+    "@graphql-codegen/typescript-operations": "^3.0.3",
+    "concurrently": "^7.6.0",
+    "graphql": "^16.6.0",
+    "graphql-codegen-signed-operation": "^0.0.1"
+  }
+}

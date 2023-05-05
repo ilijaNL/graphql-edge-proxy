@@ -1,0 +1,7 @@
+query getCountry($countryCode: String!) {
+  country: countries(filter: { code: { eq: $countryCode } }) {
+    code
+    name
+    capital
+  }
+}
