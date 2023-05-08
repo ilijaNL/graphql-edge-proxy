@@ -1,4 +1,4 @@
-# GraphQL Edge Proxy
+# (WIP) GraphQL Edge Proxy
 
 Make your graphql server secure and blazingly fast 🚀🚀
 
