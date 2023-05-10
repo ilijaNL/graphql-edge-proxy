@@ -1,24 +1,30 @@
-import { handler } from '@graphql-edge/proxy';
+import { Config, handler } from '@graphql-edge/proxy';
 
-const proxyConfig = {
-  maxTokens: 100,
-  url: new URL('https://countries.trevorblades.com'),
+const proxyConfig: Config = {
+  url: 'https://countries.trevorblades.com',
   passThroughSecret: 'pass-through',
-  secret: 'some-secret',
+  rules: {
+    sign_secret: 'some-secret',
+    maxTokens: 100,
+    removeExtensions: true,
+  },
 };
 
 export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
-    return handler(request, {
-      ...proxyConfig,
-      waitUntilReport(promise) {
-        ctx.waitUntil(
-          promise.then(async (report) => {
-            await new Promise((resolve) => setTimeout(resolve, 20));
-            console.log({ report });
-          })
-        );
-      },
-    });
+    const { report, response } = await handler(request, proxyConfig);
+    if (report) {
+      ctx.waitUntil(
+        Promise.resolve(report).then((d) => {
+          console.log({
+            status: d.originResponse.status,
+            duration: Date.now() - report.startTime,
+            headers: d.originResponse.headers,
+          });
+        })
+      );
+    }
+
+    return response;
   },
 };
