@@ -17,20 +17,21 @@ export async function generateRandomSecretKey({ algorithm = 'SHA-1' } = {}) {
   );
 }
 
-export async function hmacHex(secretKey: CryptoKey, message: Uint8Array) {
-  // Sign the message with HMAC and the CryptoKey
-  const signature = await crypto.subtle.sign('HMAC', secretKey, message);
-
-  // Convert the signature ArrayBuffer to a hex string
-  return Array.from(new Uint8Array(signature))
+export function bufferToHex(buffer: ArrayBuffer) {
+  return Array.from(new Uint8Array(buffer))
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('');
 }
 
+export async function hmacHex(secretKey: CryptoKey, message: Uint8Array) {
+  // Sign the message with HMAC and the CryptoKey
+  const signature = await crypto.subtle.sign('HMAC', secretKey, message);
+
+  return bufferToHex(signature);
+}
+
 export async function webTimingSafeEqual(secretKey: CryptoKey, left: string, right: string) {
   const encoder = new TextEncoder();
-
-  // Set subtleCrypto based on the environment (Node.js or browser)
   const leftUint8Array = encoder.encode(left);
   const rightUint8Array = encoder.encode(right);
 

@@ -1,7 +1,7 @@
 import { parse, printNormalized } from './utils';
 import { Headers, Response, Request, crypto } from '@whatwg-node/fetch';
 import { DocumentNode } from 'graphql';
-import { generateRandomSecretKey, hmacHex, webTimingSafeEqual } from './safe-compare';
+import { bufferToHex, generateRandomSecretKey, hmacHex, webTimingSafeEqual } from './safe-compare';
 
 const ErrorRegex = /Did you mean ".+"/g;
 /**
@@ -15,10 +15,10 @@ const maskError = (error: { message?: string }, mask: string) => {
   return error;
 };
 
-async function getHMACFromQuery(stableQuery: string, secret: string) {
+async function getHMACFromQuery(stableQuery: string, secret: string, algorithm: SignignAlgorithm) {
   const encoder = new TextEncoder();
   const secretKeyData = encoder.encode(secret);
-  const key = await crypto.subtle.importKey('raw', secretKeyData, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const key = await crypto.subtle.importKey('raw', secretKeyData, { name: 'HMAC', hash: algorithm }, false, ['sign']);
 
   return hmacHex(key, encoder.encode(stableQuery));
 }
@@ -31,8 +31,20 @@ export const defaultRules: Rules = {
   // maxDepth: 10,
 };
 
+export type SignignAlgorithm = 'SHA-1' | 'SHA-256' | 'SHA-384' | 'SHA-512';
+
 export type Rules = {
-  sign_secret: string | null;
+  sign_secret:
+    | string
+    | null
+    | {
+        secret: string;
+        /**
+         * Algorithm that is used to create HMAC hash. Default is SHA-256.
+         * Possible values "SHA-1", "SHA-256", "SHA-384", "SHA-512"
+         */
+        algorithm: SignignAlgorithm;
+      };
   errorMasking: string | null;
   maxTokens: number;
   removeExtensions: boolean;
@@ -52,13 +64,21 @@ export type OperationReport = {
 };
 
 export type Config = {
+  /**
+   * GraphQL endpoint url
+   */
   url: string;
   /**
-   * Secret that can be used in header to avoid applying rules
+   * Hash of the secret that can be used to avoid applying rules
+   * It is compared against hashes sha-256 hex passthrough secret
+   *
+   * @Note: rule.maxTokens is always applied
    */
-  passThroughSecret: string;
+  passThroughHash: string;
   rules: Partial<Rules>;
-
+  /**
+   * Custom fetch function which can be used to override fetch
+   */
   fetchFn?: typeof fetch;
   /**
    * Fetch method which is used to fetch from origin.
@@ -67,8 +87,8 @@ export type Config = {
   originFetch?: (requestSpec: OriginRequest) => Promise<Response>;
 };
 
-export const OPERATION_HEADER_KEY = 'x-operation-hash';
-export const PASSTHROUGH_HEADER_KEY = 'x-proxy-passthrough';
+export const OPERATION_HEADER_KEY = 'x-proxy-op-hash';
+export const PASSTHROUGH_HEADER_KEY = 'x-proxy-pass-secret';
 
 export function getOperationHashFromHeader(req: Request) {
   return req.headers.get(OPERATION_HEADER_KEY);
@@ -136,6 +156,20 @@ export type HandlerResponse = {
   report?: OperationReport;
 };
 
+export async function isPassthroughRequest(request: Request, passThroughHash: string) {
+  const passThroughHeaderValue = getPassThroughSecretFromHeader(request);
+  if (!passThroughHeaderValue) {
+    return false;
+  }
+
+  const passThroughHashFromHeader = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(passThroughHeaderValue)
+  );
+
+  return passThroughHash === bufferToHex(passThroughHashFromHeader);
+}
+
 /**
  * Proxy function which does:
  * - Proxies through if not GET or POST method ELSE:
@@ -149,7 +183,6 @@ export type HandlerResponse = {
  */
 export async function handler(request: Request, config: Config): Promise<HandlerResponse> {
   const rules = Object.assign({}, defaultRules, config.rules);
-  const passThroughSecret = config.passThroughSecret;
 
   const fetchFn = config.fetchFn ?? global.fetch ?? window.fetch;
   const fetchFromOrigin =
@@ -160,16 +193,13 @@ export async function handler(request: Request, config: Config): Promise<Handler
   }
 
   const randomSecretFromTimingAttack = await generateRandomSecretKey();
-  const passThroughHeaderValue = getPassThroughSecretFromHeader(request);
-  const isPassThrough =
-    passThroughHeaderValue &&
-    (await webTimingSafeEqual(randomSecretFromTimingAttack, passThroughSecret, passThroughHeaderValue));
 
+  const isPassThrough = await isPassthroughRequest(request, config.passThroughHash);
   const hashHeader = getOperationHashFromHeader(request);
 
   if (!isPassThrough && rules.sign_secret) {
     if (!hashHeader) {
-      return createResponse(new Response('Invalid x-operation-hash header', { status: 403 }));
+      return createResponse(new Response(`Invalid ${OPERATION_HEADER_KEY} header`, { status: 403 }));
     }
   }
 
@@ -190,11 +220,14 @@ export async function handler(request: Request, config: Config): Promise<Handler
   const stableQuery = printNormalized(document);
 
   if (!isPassThrough && rules.sign_secret) {
-    const value = await getHMACFromQuery(stableQuery, rules.sign_secret);
+    const secret = typeof rules.sign_secret === 'string' ? rules.sign_secret : rules.sign_secret.secret;
+    const algo = typeof rules.sign_secret === 'object' ? rules.sign_secret.algorithm : 'SHA-256';
+
+    const value = await getHMACFromQuery(stableQuery, secret, algo);
     const verified = hashHeader !== null && (await webTimingSafeEqual(randomSecretFromTimingAttack, hashHeader, value));
 
     if (!verified) {
-      return createResponse(new Response('Invalid x-operation-hash header', { status: 403 }));
+      return createResponse(new Response(`Invalid ${OPERATION_HEADER_KEY} header`, { status: 403 }));
     }
   }
 
