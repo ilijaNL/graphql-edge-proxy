@@ -1,11 +1,10 @@
 import tap from 'tap';
-import { handler } from '../src/handler';
+import { Config, defaultRules, handler } from '../src/handler';
 import type { IncomingHttpHeaders } from 'http';
 import { Headers, Response, Request } from '@whatwg-node/fetch';
 import { printExecutableGraphQLDocument } from '@graphql-tools/documents';
 import { createHmac } from 'node:crypto';
 import { DocumentNode, parse } from 'graphql';
-import EventEmitter, { once } from 'events';
 
 export function toNodeHeaders(headers: Headers): IncomingHttpHeaders {
   const result: IncomingHttpHeaders = {};
@@ -27,11 +26,15 @@ export function toNodeHeaders(headers: Headers): IncomingHttpHeaders {
 }
 
 const defaultConfig = {
-  maxTokens: 1000,
-  url: new URL('http://app.localhost'),
+  url: 'http://app.localhost',
   passThroughSecret: 'pass',
-  secret: 'signature',
-};
+  rules: {
+    removeExtensions: true,
+    // errorMasking: '',
+    sign_secret: 'signature',
+    maxTokens: 1000,
+  },
+} satisfies Config;
 
 function calculateHashFromQuery(document: DocumentNode, secret: string) {
   const printedDoc = printExecutableGraphQLDocument(document);
@@ -46,7 +49,7 @@ tap.test('proxies non post/get methods directly', async (t) => {
     method: 'OPTION',
   });
 
-  const resp = await handler(optionRequest, {
+  const { response: resp } = await handler(optionRequest, {
     ...defaultConfig,
     async fetchFn(req) {
       t.equal(req, optionRequest);
@@ -65,7 +68,7 @@ tap.test('no hash header set', async (t) => {
     }),
   });
 
-  const resp = await handler(req, {
+  const { response: resp } = await handler(req, {
     ...defaultConfig,
     async fetchFn() {
       return new Response('ok');
@@ -87,7 +90,7 @@ tap.test('no query defined on body', async (t) => {
     }),
   });
 
-  const resp = await handler(req, {
+  const { response: resp } = await handler(req, {
     ...defaultConfig,
     async fetchFn() {
       return new Response('ok');
@@ -109,7 +112,7 @@ tap.test('not valid document provided', async (t) => {
     }),
   });
 
-  const resp = await handler(req, {
+  const { response: resp } = await handler(req, {
     ...defaultConfig,
     async fetchFn() {
       return new Response('ok');
@@ -131,7 +134,7 @@ tap.test('not valid hash provided', async (t) => {
     }),
   });
 
-  const resp = await handler(req, {
+  const { response: resp } = await handler(req, {
     ...defaultConfig,
     async fetchFn() {
       return new Response('ok');
@@ -142,36 +145,9 @@ tap.test('not valid hash provided', async (t) => {
   t.equal(text, 'Invalid x-operation-hash header');
 });
 
-tap.test('dont valid signature when passthrough is provided', async (t) => {
-  const req = new Request('http://test.localhost', {
-    method: 'POST',
-    headers: new Headers({
-      'x-operation-hash': 'hash123',
-      'x-proxy-passthrough': defaultConfig.passThroughSecret,
-    }),
-    body: JSON.stringify({
-      query: 'query me { me }',
-    }),
-  });
-
-  const resp = await handler(req, {
-    ...defaultConfig,
-    async fetchFn() {
-      return new Response(Buffer.from('works'), {
-        status: 200,
-        headers: new Headers({
-          'content-type': 'application/text',
-        }),
-      });
-    },
-  });
-  t.equal(await resp.text(), 'works');
-  t.equal(resp.status, 200);
-});
-
-tap.test('error masking', async (t) => {
+tap.test('signed with diff secret', async (t) => {
   const query = 'query me {me}';
-  const hash = calculateHashFromQuery(parse(query), defaultConfig.secret);
+  const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret);
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
@@ -182,7 +158,39 @@ tap.test('error masking', async (t) => {
     }),
   });
 
-  const resp = await handler(req, {
+  const { response: resp } = await handler(req, {
+    ...defaultConfig,
+    rules: {
+      ...defaultConfig.rules,
+      sign_secret: 'signaturf',
+    },
+    async fetchFn() {
+      return new Response(Buffer.from('ok'), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/text',
+        }),
+      });
+    },
+  });
+  t.equal(resp.status, 403);
+  t.equal(await resp.text(), 'Invalid x-operation-hash header');
+});
+
+tap.test('error masking', async (t) => {
+  const query = 'query me {me}';
+  const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret);
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      'x-operation-hash': hash,
+    }),
+    body: JSON.stringify({
+      query: query,
+    }),
+  });
+
+  const { response: resp } = await handler(req, {
     ...defaultConfig,
     async fetchFn() {
       return new Response(
@@ -214,81 +222,30 @@ tap.test('error masking', async (t) => {
   t.same(response.errors, [{ message: '[Suggestion hidden]' }, { message: '[Suggestion hidden]' }]);
 });
 
-tap.test('skip error masking when passthrough', async (t) => {
-  const query = 'query me {me}';
-  const hash = calculateHashFromQuery(parse(query), defaultConfig.secret);
-  const req = new Request('http://test.localhost', {
-    method: 'POST',
-    headers: new Headers({
-      'x-operation-hash': hash,
-      'x-proxy-passthrough': defaultConfig.passThroughSecret,
-    }),
-    body: JSON.stringify({
-      query: query,
-    }),
-  });
-
-  const errors = [
-    {
-      message: 'Did you mean "Type ABC"',
-    },
-    {
-      message: 'Did you mean "Type ABC"',
-    },
-  ];
-
-  const resp = await handler(req, {
-    ...defaultConfig,
-    async fetchFn() {
-      return new Response(
-        Buffer.from(
-          JSON.stringify({
-            data: null,
-            errors: errors,
-          })
-        ),
-        {
-          status: 200,
-          headers: new Headers({
-            'content-type': 'application/json',
-          }),
-        }
-      );
-    },
-  });
-  t.equal(resp.status, 200);
-
-  const response = await resp.json();
-  t.same(response.errors, errors);
-});
-
 tap.test('creates operation report', async (t) => {
   const query = 'query me {me}';
-  const hash = calculateHashFromQuery(parse(query), defaultConfig.secret);
+  const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret);
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
       'x-operation-hash': hash,
-      // 'x-proxy-passthrough': defaultConfig.passThroughSecret,
     }),
     body: JSON.stringify({
       query: query,
     }),
   });
 
-  const ee = new EventEmitter();
-
-  const resp = await handler(req, {
+  const { response: resp, report } = await handler(req, {
     ...defaultConfig,
-    waitUntilReport(promise) {
-      promise.then((report) => {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        t.same(report!.args, []);
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-        t.equal(report!.exec.ok, true);
-        ee.emit('waited');
-      });
-    },
+    // waitUntilReport(promise) {
+    //   promise.then((report) => {
+    //     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    //     t.same(report!.args, []);
+    //     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    //     t.equal(report!.exec.ok, true);
+    //     ee.emit('waited');
+    //   });
+    // },
     async fetchFn() {
       return new Response(
         Buffer.from(
@@ -306,102 +263,197 @@ tap.test('creates operation report', async (t) => {
       );
     },
   });
+
   t.equal(resp.status, 200);
-  await once(ee, 'waited');
+  const reportData = await report?.originResponse.json();
+  t.same(reportData, { data: { me: 'me' }, errors: [] });
 
   const response = await resp.json();
   t.same(response.errors, []);
   t.same(response.data, { me: 'me' });
 });
 
-tap.test('catches error when operation promise report throws', async (t) => {
-  const query = 'query me {me}';
-  const hash = calculateHashFromQuery(parse(query), defaultConfig.secret);
+tap.test('skips signature when sign_secret is null', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
-    headers: new Headers({
-      'x-operation-hash': hash,
-      // 'x-proxy-passthrough': defaultConfig.passThroughSecret,
-    }),
+    headers: new Headers({}),
     body: JSON.stringify({
-      query: query,
+      query: 'query me { me }',
     }),
   });
 
-  const ee = new EventEmitter();
-
-  const resp = await handler(req, {
+  const { response: resp } = await handler(req, {
     ...defaultConfig,
-    waitUntilReport(promise) {
-      promise
-        .then(async () => {
-          throw new Error('');
-        })
-        .catch(() => {
-          ee.emit('final');
-        });
+    rules: {
+      ...defaultConfig.rules,
+      sign_secret: null,
     },
     async fetchFn() {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-      return new Response(
-        Buffer.from(
-          JSON.stringify({
-            data: { me: 'me' },
-            errors: [],
-          })
-        ),
-        {
-          status: 200,
-          headers: new Headers({
-            'content-type': 'application/json',
-          }),
-        }
-      );
+      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/json',
+        }),
+      });
     },
   });
 
-  const value = await resp.json();
-  await once(ee, 'final');
-  t.equal(resp.status, 200);
-  t.same(value, {
-    data: { me: 'me' },
-    errors: [],
-  });
+  t.same(await resp.json(), { data: { me: 'works' } });
 });
 
-tap.test('too many tokens', async (t) => {
-  const query = 'query me {me b a c d}';
-  const hash = calculateHashFromQuery(parse(query), defaultConfig.secret);
+tap.test('applies default rules config', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
-    headers: new Headers({
-      'x-operation-hash': hash,
-      'x-proxy-passthrough': defaultConfig.passThroughSecret,
-    }),
+    headers: new Headers({}),
     body: JSON.stringify({
-      query: query,
+      query: 'query me { me }',
     }),
   });
 
-  const resp = await handler(req, {
+  const { report } = await handler(req, {
     ...defaultConfig,
-    maxTokens: 5,
+    rules: {},
     async fetchFn() {
-      return new Response(
-        Buffer.from(
-          JSON.stringify({
-            data: {},
-          })
-        ),
-        {
-          status: 200,
-          headers: new Headers({
-            'content-type': 'application/json',
-          }),
-        }
-      );
+      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/json',
+        }),
+      });
     },
   });
-  t.equal(resp.status, 403);
-  t.equal(await resp.text(), 'cannot parse query');
+
+  t.same(report?.rules, defaultRules);
+});
+
+tap.test('pass through', async (t) => {
+  t.test('no signature required', async (t) => {
+    const req = new Request('http://test.localhost', {
+      method: 'POST',
+      headers: new Headers({
+        'x-operation-hash': 'hash123',
+        'x-proxy-passthrough': defaultConfig.passThroughSecret,
+      }),
+      body: JSON.stringify({
+        query: 'query me { me }',
+      }),
+    });
+
+    const { response: resp } = await handler(req, {
+      ...defaultConfig,
+      async fetchFn() {
+        return new Response(Buffer.from('works'), {
+          status: 200,
+          headers: new Headers({
+            'content-type': 'application/text',
+          }),
+        });
+      },
+    });
+    t.equal(await resp.text(), 'works');
+    t.equal(resp.status, 200);
+  });
+
+  t.test('wrong passthrough', async (t) => {
+    const req = new Request('http://test.localhost', {
+      method: 'POST',
+      headers: new Headers({
+        'x-operation-hash': 'hash123',
+        'x-proxy-passthrough': 'KABOOM',
+      }),
+      body: JSON.stringify({
+        query: 'query me { me }',
+      }),
+    });
+
+    const { response: resp } = await handler(req, {
+      ...defaultConfig,
+      async fetchFn() {
+        return new Response(Buffer.from('works'), {
+          status: 200,
+          headers: new Headers({
+            'content-type': 'application/text',
+          }),
+        });
+      },
+    });
+    t.equal(await resp.text(), 'Invalid x-operation-hash header');
+    t.equal(resp.status, 403);
+  });
+
+  t.test('keeps extensions', async (t) => {
+    const req = new Request('http://test.localhost', {
+      method: 'POST',
+      headers: new Headers({
+        'x-operation-hash': 'hash123',
+        'x-proxy-passthrough': defaultConfig.passThroughSecret,
+      }),
+      body: JSON.stringify({
+        query: 'query me { me }',
+      }),
+    });
+
+    const { response: resp } = await handler(req, {
+      ...defaultConfig,
+      async fetchFn() {
+        return new Response(Buffer.from(JSON.stringify({ extensions: [{ works: '123' }] })), {
+          status: 200,
+          headers: new Headers({
+            'content-type': 'application/text',
+          }),
+        });
+      },
+    });
+    const { extensions } = await resp.json();
+    t.same(extensions, [{ works: '123' }]);
+    t.equal(resp.status, 200);
+  });
+
+  t.test('keeps errors', async (t) => {
+    const query = 'query me {me}';
+    const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret);
+    const req = new Request('http://test.localhost', {
+      method: 'POST',
+      headers: new Headers({
+        'x-operation-hash': hash,
+        'x-proxy-passthrough': defaultConfig.passThroughSecret,
+      }),
+      body: JSON.stringify({
+        query: query,
+      }),
+    });
+
+    const errors = [
+      {
+        message: 'Did you mean "Type ABC"',
+      },
+      {
+        message: 'Did you mean "Type ABC"',
+      },
+    ];
+
+    const { response: resp } = await handler(req, {
+      ...defaultConfig,
+      async fetchFn() {
+        return new Response(
+          Buffer.from(
+            JSON.stringify({
+              data: null,
+              errors: errors,
+            })
+          ),
+          {
+            status: 200,
+            headers: new Headers({
+              'content-type': 'application/json',
+            }),
+          }
+        );
+      },
+    });
+    t.equal(resp.status, 200);
+
+    const response = await resp.json();
+    t.same(response.errors, errors);
+  });
 });

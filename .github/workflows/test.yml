@@ -1,25 +1,14 @@
-name: CI
+name: Test
 
 on:
-  push:
-    branches:
-      - "master"
-    paths-ignore:
-      - 'docs/**'
-      - 'examples/**'
-      - '*.md'
+  workflow_call:
   pull_request:
     branches:
-      - "master"
+      - "main"
     paths-ignore:
       - 'docs/**'
       - 'examples/**'
       - '*.md'
-
-permissions:
-  contents: read  # Required when overriding permissions
-  pull-requests: write  # <== Add this to allow action to modify your PR
-
 jobs:
   # Label of the container job
   test:
@@ -41,5 +30,3 @@ jobs:
       - run: yarn lint
       - run: yarn tc
       - run: yarn test
-      - name: ✅ Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
