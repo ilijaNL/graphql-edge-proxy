@@ -9,9 +9,11 @@ concurrency: ${{ github.workflow }}-${{ github.ref }}
 
 jobs:
   test:
-    uses: ./.github/workflows/test.yaml
+    uses: ./.github/workflows/test.yml
   release:
     name: Release
+    if: github.repository == 'ilijaNL/graphql-edge-proxy'
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       id-token: write
