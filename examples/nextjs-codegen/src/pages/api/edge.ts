@@ -4,7 +4,8 @@ import { Config, handler } from '@graphql-edge/proxy';
 
 const proxyConfig: Config = {
   url: 'https://countries.trevorblades.com',
-  passThroughSecret: 'pass-through',
+  // sha-256 hash of "pass-through"
+  passThroughHash: '14652aa39beeaf35b41963fdcda76c67023bcb6339f91f0c7f8177c7f7a3193b',
   rules: {
     sign_secret: 'some-secret',
     maxTokens: 100,

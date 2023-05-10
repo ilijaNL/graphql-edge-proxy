@@ -1,10 +1,11 @@
 import tap from 'tap';
-import { Config, defaultRules, handler } from '../src/handler';
+import { Config, OPERATION_HEADER_KEY, PASSTHROUGH_HEADER_KEY, defaultRules, handler } from '../src/handler';
 import type { IncomingHttpHeaders } from 'http';
 import { Headers, Response, Request } from '@whatwg-node/fetch';
 import { printExecutableGraphQLDocument } from '@graphql-tools/documents';
 import { createHmac } from 'node:crypto';
 import { DocumentNode, parse } from 'graphql';
+import crypto from 'node:crypto';
 
 export function toNodeHeaders(headers: Headers): IncomingHttpHeaders {
   const result: IncomingHttpHeaders = {};
@@ -25,9 +26,11 @@ export function toNodeHeaders(headers: Headers): IncomingHttpHeaders {
   return result;
 }
 
+const defaultPassThroughSecret = 'pass';
+
 const defaultConfig = {
   url: 'http://app.localhost',
-  passThroughSecret: 'pass',
+  passThroughHash: crypto.createHash('sha256').update(defaultPassThroughSecret).digest('hex'),
   rules: {
     removeExtensions: true,
     // errorMasking: '',
@@ -36,10 +39,10 @@ const defaultConfig = {
   },
 } satisfies Config;
 
-function calculateHashFromQuery(document: DocumentNode, secret: string) {
+function calculateHashFromQuery(document: DocumentNode, secret: string, algo = 'sha256') {
   const printedDoc = printExecutableGraphQLDocument(document);
   // hash with hmac
-  return createHmac('sha256', secret).update(printedDoc).digest('hex');
+  return createHmac(algo, secret).update(printedDoc).digest('hex');
 }
 
 tap.test('proxies non post/get methods directly', async (t) => {
@@ -76,14 +79,14 @@ tap.test('no hash header set', async (t) => {
   });
   const text = await resp.text();
   t.equal(resp.status, 403);
-  t.equal(text, 'Invalid x-operation-hash header');
+  t.equal(text, `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
 tap.test('no query defined on body', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
-      'x-operation-hash': 'hash123',
+      [OPERATION_HEADER_KEY]: 'hash123',
     }),
     body: JSON.stringify({
       quer: '123',
@@ -105,7 +108,7 @@ tap.test('not valid document provided', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
-      'x-operation-hash': 'hash123',
+      [OPERATION_HEADER_KEY]: 'hash123',
     }),
     body: JSON.stringify({
       query: 'invaliddoc',
@@ -127,7 +130,7 @@ tap.test('not valid hash provided', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
-      'x-operation-hash': 'hash123',
+      [OPERATION_HEADER_KEY]: 'hash123',
     }),
     body: JSON.stringify({
       query: 'query me { me }',
@@ -142,7 +145,7 @@ tap.test('not valid hash provided', async (t) => {
   });
   const text = await resp.text();
   t.equal(resp.status, 403);
-  t.equal(text, 'Invalid x-operation-hash header');
+  t.equal(text, `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
 tap.test('signed with diff secret', async (t) => {
@@ -151,7 +154,7 @@ tap.test('signed with diff secret', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
-      'x-operation-hash': hash,
+      [OPERATION_HEADER_KEY]: hash,
     }),
     body: JSON.stringify({
       query: query,
@@ -174,7 +177,77 @@ tap.test('signed with diff secret', async (t) => {
     },
   });
   t.equal(resp.status, 403);
-  t.equal(await resp.text(), 'Invalid x-operation-hash header');
+  t.equal(await resp.text(), `Invalid ${OPERATION_HEADER_KEY} header`);
+});
+
+tap.test('signed with custom algorithms', async (t) => {
+  const query = 'query me {me}';
+  const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret, 'sha512');
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      [OPERATION_HEADER_KEY]: hash,
+    }),
+    body: JSON.stringify({
+      query: query,
+    }),
+  });
+
+  const { response: resp } = await handler(req, {
+    ...defaultConfig,
+    rules: {
+      ...defaultConfig.rules,
+      sign_secret: {
+        algorithm: 'SHA-1',
+        secret: defaultConfig.rules.sign_secret,
+      },
+    },
+    async fetchFn() {
+      return new Response(Buffer.from(''), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/text',
+        }),
+      });
+    },
+  });
+  t.equal(resp.status, 403);
+  t.equal(await resp.text(), `Invalid ${OPERATION_HEADER_KEY} header`);
+});
+
+tap.test('signed with custom algorithms', async (t) => {
+  const query = 'query me {me}';
+  const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret, 'sha512');
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      [OPERATION_HEADER_KEY]: hash,
+    }),
+    body: JSON.stringify({
+      query: query,
+    }),
+  });
+
+  const { response: resp } = await handler(req, {
+    ...defaultConfig,
+    rules: {
+      ...defaultConfig.rules,
+      sign_secret: {
+        algorithm: 'SHA-512',
+        secret: defaultConfig.rules.sign_secret,
+      },
+    },
+    async fetchFn() {
+      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/json',
+        }),
+      });
+    },
+  });
+  t.equal(resp.status, 200);
+  t.same(await resp.json(), { data: { me: 'works' } });
 });
 
 tap.test('error masking', async (t) => {
@@ -183,7 +256,7 @@ tap.test('error masking', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
-      'x-operation-hash': hash,
+      [OPERATION_HEADER_KEY]: hash,
     }),
     body: JSON.stringify({
       query: query,
@@ -228,7 +301,7 @@ tap.test('creates operation report', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',
     headers: new Headers({
-      'x-operation-hash': hash,
+      [OPERATION_HEADER_KEY]: hash,
     }),
     body: JSON.stringify({
       query: query,
@@ -331,8 +404,8 @@ tap.test('pass through', async (t) => {
     const req = new Request('http://test.localhost', {
       method: 'POST',
       headers: new Headers({
-        'x-operation-hash': 'hash123',
-        'x-proxy-passthrough': defaultConfig.passThroughSecret,
+        [OPERATION_HEADER_KEY]: 'hash123',
+        [PASSTHROUGH_HEADER_KEY]: defaultPassThroughSecret,
       }),
       body: JSON.stringify({
         query: 'query me { me }',
@@ -358,8 +431,8 @@ tap.test('pass through', async (t) => {
     const req = new Request('http://test.localhost', {
       method: 'POST',
       headers: new Headers({
-        'x-operation-hash': 'hash123',
-        'x-proxy-passthrough': 'KABOOM',
+        [OPERATION_HEADER_KEY]: 'hash123',
+        [PASSTHROUGH_HEADER_KEY]: 'KABOOM',
       }),
       body: JSON.stringify({
         query: 'query me { me }',
@@ -377,7 +450,7 @@ tap.test('pass through', async (t) => {
         });
       },
     });
-    t.equal(await resp.text(), 'Invalid x-operation-hash header');
+    t.equal(await resp.text(), `Invalid ${OPERATION_HEADER_KEY} header`);
     t.equal(resp.status, 403);
   });
 
@@ -385,8 +458,8 @@ tap.test('pass through', async (t) => {
     const req = new Request('http://test.localhost', {
       method: 'POST',
       headers: new Headers({
-        'x-operation-hash': 'hash123',
-        'x-proxy-passthrough': defaultConfig.passThroughSecret,
+        [OPERATION_HEADER_KEY]: 'hash123',
+        [PASSTHROUGH_HEADER_KEY]: defaultPassThroughSecret,
       }),
       body: JSON.stringify({
         query: 'query me { me }',
@@ -415,8 +488,8 @@ tap.test('pass through', async (t) => {
     const req = new Request('http://test.localhost', {
       method: 'POST',
       headers: new Headers({
-        'x-operation-hash': hash,
-        'x-proxy-passthrough': defaultConfig.passThroughSecret,
+        [OPERATION_HEADER_KEY]: hash,
+        [PASSTHROUGH_HEADER_KEY]: defaultPassThroughSecret,
       }),
       body: JSON.stringify({
         query: query,
