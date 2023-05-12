@@ -313,7 +313,6 @@ export async function handler(request: Request, config: Config): Promise<Handler
 
   if (
     !originResponse.ok ||
-    isPassThrough ||
     !(contentType.includes('application/json') || contentType.includes('application/graphql-response+json'))
   ) {
     return createResponse(originResponse, report);
@@ -333,11 +332,11 @@ export async function handler(request: Request, config: Config): Promise<Handler
   const errorMaskingRule = rules.errorMasking;
 
   // check if has errors
-  if (errorMaskingRule && _hasErrors) {
+  if (!isPassThrough && errorMaskingRule && _hasErrors) {
     payload.errors = errors.map((e: any) => maskError(e, errorMaskingRule));
   }
 
-  if (rules.removeExtensions) {
+  if (!isPassThrough && rules.removeExtensions) {
     delete payload['extensions'];
   }
 

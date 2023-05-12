@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.6
+
+### Patch Changes
+
+- Continue if passthrough
+
 ## 0.0.5
 
 ### Patch Changes
