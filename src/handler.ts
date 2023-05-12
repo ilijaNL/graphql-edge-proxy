@@ -5,15 +5,22 @@ import { bufferToHex, generateRandomSecretKey, hmacHex, webTimingSafeEqual } fro
 
 const ErrorRegex = /Did you mean ".+"/g;
 /**
- * Masks the error message, this mutates the original object
+ * Masks the error message, creates new error if masked
  */
 const maskError = (error: { message?: string }, mask: string) => {
   if (error.message) {
-    error.message = error.message.replace(ErrorRegex, mask);
+    return {
+      ...error,
+      message: error.message.replace(ErrorRegex, mask),
+    };
   }
 
   return error;
 };
+
+function hasErrors(errors?: any[]): errors is any[] {
+  return Boolean(errors) && Array.isArray(errors);
+}
 
 async function getHMACFromQuery(stableQuery: string, secret: string, algorithm: SignignAlgorithm) {
   const encoder = new TextEncoder();
@@ -53,6 +60,10 @@ export type Rules = {
 export type OperationReport = {
   timings: Timings;
   rules: Rules;
+  /** GraphQL success */
+  ok: boolean;
+  /** Graphqly errors, if any */
+  errors: Array<any> | null;
   originRequest: OriginRequest;
   /**
    * This response is cloned and can be easily consumed again by calling .json for example
@@ -141,14 +152,11 @@ function createReport(
   appliedRules: Rules,
   originRequest: OriginRequest,
   clonedResponse: Response,
+  ok: boolean,
+  errors: Array<any> | null,
   timings: Timings
 ): OperationReport {
-  return {
-    rules: appliedRules,
-    originRequest: originRequest,
-    originResponse: clonedResponse,
-    timings,
-  };
+  return { errors, ok, rules: appliedRules, originRequest: originRequest, originResponse: clonedResponse, timings };
 }
 
 export function defaultOriginFetch(config: Config, request: Request, spec: OriginRequest, fetchFn: typeof fetch) {
@@ -299,7 +307,7 @@ export async function handler(request: Request, config: Config): Promise<Handler
     origin_end_parsing_request: null,
   };
 
-  const report = createReport(rules, originRequest, originResponse.clone(), timings);
+  const report = createReport(rules, originRequest, originResponse.clone(), false, null, timings);
 
   const contentType = originResponse.headers.get('content-type') ?? '';
 
@@ -311,18 +319,22 @@ export async function handler(request: Request, config: Config): Promise<Handler
     return createResponse(originResponse, report);
   }
 
-  const payload = await originResponse.json();
+  const payload: { data?: any; errors?: any[]; extensions?: any } = await originResponse.json();
 
   // modify this since we done parsing the origin request
   timings.origin_end_parsing_request = Date.now();
 
+  const errors = payload.errors;
+
+  report.errors = errors ?? null;
+  const _hasErrors = hasErrors(errors);
+  report.ok = _hasErrors ? errors.length === 0 : true;
+
   const errorMaskingRule = rules.errorMasking;
 
   // check if has errors
-  if (errorMaskingRule && payload.errors && Array.isArray(payload.errors)) {
-    payload.errors.forEach((e: any) => {
-      maskError(e, errorMaskingRule);
-    });
+  if (errorMaskingRule && _hasErrors) {
+    payload.errors = errors.map((e: any) => maskError(e, errorMaskingRule));
   }
 
   if (rules.removeExtensions) {

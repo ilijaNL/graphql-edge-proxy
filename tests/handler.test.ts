@@ -148,6 +148,41 @@ tap.test('not valid hash provided', async (t) => {
   t.equal(text, `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
+tap.test('not valid response from origin', async (t) => {
+  const q = 'query me { me }';
+  const hash = calculateHashFromQuery(parse(q), defaultConfig.rules.sign_secret);
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      [OPERATION_HEADER_KEY]: hash,
+    }),
+    body: JSON.stringify({
+      query: q,
+    }),
+  });
+
+  const { response: resp, report } = await handler(req, {
+    ...defaultConfig,
+    async fetchFn() {
+      await new Promise((resolve) => setTimeout(resolve, 3));
+      return new Response('ok');
+    },
+  });
+  const text = await resp.text();
+
+  t.equal(resp.status, 200);
+  t.equal(text, 'ok');
+  // test report correctness
+  t.equal(report?.timings.origin_end_parsing_request, null);
+  t.equal(report?.ok, false);
+  t.equal(report?.errors, null);
+  t.equal(report?.originResponse.status, 200);
+  t.ok(report?.timings.origin_end_request);
+  t.ok(report?.timings.origin_start_request);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  t.ok(report!.timings.origin_start_request < report!.timings.origin_end_request);
+});
+
 tap.test('signed with diff secret', async (t) => {
   const query = 'query me {me}';
   const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret);
@@ -290,7 +325,7 @@ tap.test('error masking', async (t) => {
     }),
   });
 
-  const { response: resp } = await handler(req, {
+  const { response: resp, report } = await handler(req, {
     ...defaultConfig,
     async fetchFn() {
       return new Response(
@@ -317,6 +352,17 @@ tap.test('error masking', async (t) => {
     },
   });
   t.equal(resp.status, 200);
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  t.equal(report!.ok, false);
+  t.same(report?.errors, [
+    {
+      message: 'Did you mean "Type ABC"',
+    },
+    {
+      message: 'Did you mean "Type ABC"',
+    },
+  ]);
 
   const response = await resp.json();
   t.same(response.errors, [{ message: '[Suggestion hidden]' }, { message: '[Suggestion hidden]' }]);
@@ -362,6 +408,8 @@ tap.test('creates operation report', async (t) => {
 
   t.ok(report?.timings);
   t.ok(report?.timings.origin_end_parsing_request);
+  t.equal(report?.ok, true);
+  t.same(report?.errors, []);
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   t.ok(report!.timings.origin_start_request < report!.timings.origin_end_parsing_request!);
