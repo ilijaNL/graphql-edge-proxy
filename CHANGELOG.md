@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.5
+
+### Patch Changes
+
+- Expand report data
+
 ## 0.0.4
 
 ### Patch Changes
