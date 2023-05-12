@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.3
+
+### Patch Changes
+
+- Timings
+
 ## 0.0.2
 
 ### Patch Changes
