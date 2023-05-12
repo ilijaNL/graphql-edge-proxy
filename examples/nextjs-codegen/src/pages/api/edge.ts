@@ -24,7 +24,7 @@ export default async function MyEdgeFunction(request: NextRequest, ctx: NextFetc
       Promise.resolve(report).then((d) => {
         console.log({
           status: d.originResponse.status,
-          duration: Date.now() - report.startTime,
+          duration: Date.now() - report.timings.origin_end_request,
           headers: d.originResponse.headers,
         });
       })

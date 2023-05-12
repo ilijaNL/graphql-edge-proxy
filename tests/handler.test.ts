@@ -215,6 +215,33 @@ tap.test('signed with custom algorithms', async (t) => {
   t.equal(await resp.text(), `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
+tap.test('not valid json', async (t) => {
+  const query = 'query me {me}';
+  const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret);
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      [OPERATION_HEADER_KEY]: hash,
+    }),
+    body: 'wawdaw',
+  });
+
+  const { response: resp } = await handler(req, {
+    ...defaultConfig,
+    rules: defaultConfig.rules,
+    async fetchFn() {
+      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/json',
+        }),
+      });
+    },
+  });
+  t.equal(resp.status, 406);
+  t.same(await resp.text(), 'not valid body');
+});
+
 tap.test('signed with custom algorithms', async (t) => {
   const query = 'query me {me}';
   const hash = calculateHashFromQuery(parse(query), defaultConfig.rules.sign_secret, 'sha512');
@@ -310,16 +337,8 @@ tap.test('creates operation report', async (t) => {
 
   const { response: resp, report } = await handler(req, {
     ...defaultConfig,
-    // waitUntilReport(promise) {
-    //   promise.then((report) => {
-    //     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    //     t.same(report!.args, []);
-    //     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-    //     t.equal(report!.exec.ok, true);
-    //     ee.emit('waited');
-    //   });
-    // },
     async fetchFn() {
+      await new Promise((resolve) => setTimeout(resolve, 10));
       return new Response(
         Buffer.from(
           JSON.stringify({
@@ -340,6 +359,12 @@ tap.test('creates operation report', async (t) => {
   t.equal(resp.status, 200);
   const reportData = await report?.originResponse.json();
   t.same(reportData, { data: { me: 'me' }, errors: [] });
+
+  t.ok(report?.timings);
+  t.ok(report?.timings.origin_end_parsing_request);
+
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  t.ok(report!.timings.origin_start_request < report!.timings.origin_end_parsing_request!);
 
   const response = await resp.json();
   t.same(response.errors, []);

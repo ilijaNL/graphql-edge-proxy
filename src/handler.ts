@@ -51,10 +51,7 @@ export type Rules = {
 };
 
 export type OperationReport = {
-  /**
-   * In ms
-   */
-  startTime: number;
+  timings: Timings;
   rules: Rules;
   originRequest: OriginRequest;
   /**
@@ -108,25 +105,44 @@ export type OriginRequest = {
 
 export type HandlerOptions = {};
 
-function createInitialReport() {
-  return {
-    startTime: Date.now(),
-  };
-}
-
-type InitialReport = ReturnType<typeof createInitialReport>;
+export type Timings = {
+  /**
+   * Time when incoming request is started parsing the body
+   */
+  input_start_parsing: number;
+  /**
+   * Time when the incoming request's body is end parsing, after await request.json()
+   */
+  input_end_parsing: number;
+  /**
+   * Time when the incoming document is ended parsing
+   */
+  document_end_parsing: number;
+  /**
+   * Time when request is send to the origin server
+   */
+  origin_start_request: number;
+  /**
+   * Time when response is received from origin server
+   */
+  origin_end_request: number;
+  /**
+   * Time when response is parsed from origin server, after await requestOrigin.json()
+   */
+  origin_end_parsing_request: number | null;
+};
 
 function createReport(
   appliedRules: Rules,
-  initialReport: InitialReport,
   originRequest: OriginRequest,
-  clonedResponse: Response
+  clonedResponse: Response,
+  timings: Timings
 ): OperationReport {
   return {
     rules: appliedRules,
     originRequest: originRequest,
     originResponse: clonedResponse,
-    startTime: initialReport.startTime,
+    timings,
   };
 }
 
@@ -192,7 +208,9 @@ export async function handler(request: Request, config: Config): Promise<Handler
     return createResponse(await fetchFn(request));
   }
 
-  const randomSecretFromTimingAttack = await generateRandomSecretKey();
+  //TODO: check if incoming is json
+
+  const randomSecretForTimingAttack = await generateRandomSecretKey();
 
   const isPassThrough = await isPassthroughRequest(request, config.passThroughHash);
   const hashHeader = getOperationHashFromHeader(request);
@@ -203,7 +221,17 @@ export async function handler(request: Request, config: Config): Promise<Handler
     }
   }
 
-  const body = await request.json();
+  const input_start_parsing = Date.now();
+
+  let body: any = await request.text();
+
+  try {
+    body = JSON.parse(body);
+  } catch (e) {
+    return createResponse(new Response('not valid body', { status: 406 }));
+  }
+
+  const input_end_parsing = Date.now();
 
   // validate if query exissts on the payload
   if (!('query' in body || typeof body.query === 'string')) {
@@ -224,12 +252,14 @@ export async function handler(request: Request, config: Config): Promise<Handler
     const algo = typeof rules.sign_secret === 'object' ? rules.sign_secret.algorithm : 'SHA-256';
 
     const value = await getHMACFromQuery(stableQuery, secret, algo);
-    const verified = hashHeader !== null && (await webTimingSafeEqual(randomSecretFromTimingAttack, hashHeader, value));
+    const verified = hashHeader !== null && (await webTimingSafeEqual(randomSecretForTimingAttack, hashHeader, value));
 
     if (!verified) {
       return createResponse(new Response(`Invalid ${OPERATION_HEADER_KEY} header`, { status: 403 }));
     }
   }
+
+  const document_end_parsing = Date.now();
 
   // pre proxy
   const headers = new Headers(request.headers);
@@ -239,7 +269,7 @@ export async function handler(request: Request, config: Config): Promise<Handler
   headers.delete('host');
   headers.set('content-type', 'application/json');
 
-  const initialReport = createInitialReport();
+  const origin_start_request = Date.now();
 
   const originRequest = {
     document: document,
@@ -250,7 +280,17 @@ export async function handler(request: Request, config: Config): Promise<Handler
   };
 
   const originResponse = await fetchFromOrigin(originRequest);
-  const report = createReport(rules, initialReport, originRequest, originResponse.clone());
+
+  const timings: Timings = {
+    document_end_parsing,
+    input_end_parsing,
+    input_start_parsing,
+    origin_end_request: Date.now(),
+    origin_start_request,
+    origin_end_parsing_request: null,
+  };
+
+  const report = createReport(rules, originRequest, originResponse.clone(), timings);
 
   const contentType = originResponse.headers.get('content-type') ?? '';
 
@@ -259,6 +299,9 @@ export async function handler(request: Request, config: Config): Promise<Handler
   }
 
   const payload = await originResponse.json();
+
+  // modify this since we done parsing the origin request
+  timings.origin_end_parsing_request = Date.now();
 
   const errorMaskingRule = rules.errorMasking;
 
