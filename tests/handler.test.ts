@@ -371,6 +371,56 @@ tap.test('creates operation report', async (t) => {
   t.same(response.data, { me: 'me' });
 });
 
+tap.test('override passthrough function', async (t) => {
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      'x-passthrough-test': '123123',
+    }),
+    body: JSON.stringify({
+      query: 'query me { me }',
+    }),
+  });
+
+  const { response: resp1 } = await handler(req, {
+    ...defaultConfig,
+    async isPassthroughRequest(incomingRequest) {
+      return incomingRequest.headers.get('x-passthrough-test') === '123123';
+    },
+    async fetchFn() {
+      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/json',
+        }),
+      });
+    },
+  });
+
+  t.equal(resp1.status, 200);
+
+  const response = await resp1.json();
+  t.same(response.data, { me: 'works' });
+
+  const { response: resp2 } = await handler(req, {
+    ...defaultConfig,
+    async isPassthroughRequest() {
+      return false;
+    },
+    async fetchFn() {
+      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
+        status: 200,
+        headers: new Headers({
+          'content-type': 'application/json',
+        }),
+      });
+    },
+  });
+
+  t.equal(resp2.status, 403);
+  t.equal(await resp2.text(), 'Invalid x-proxy-op-hash header');
+});
+
 tap.test('skips signature when sign_secret is null', async (t) => {
   const req = new Request('http://test.localhost', {
     method: 'POST',

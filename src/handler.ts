@@ -82,6 +82,10 @@ export type Config = {
    * Can be overriden to use cache
    */
   originFetch?: (requestSpec: OriginRequest) => Promise<Response>;
+  /**
+   * Function which can be used to override default behaviour to check if the incoming request is a passtrhough request
+   */
+  isPassthroughRequest?: (incomingRequest: Request, config: Config) => Promise<boolean>;
 };
 
 export const OPERATION_HEADER_KEY = 'x-proxy-op-hash';
@@ -98,6 +102,7 @@ export function getPassThroughSecretFromHeader(req: Request) {
 export type OriginRequest = {
   headers: Headers;
   document: DocumentNode;
+  isPassThrough: boolean;
   query: string;
   variables?: Record<string, unknown>;
   operationName?: string;
@@ -201,6 +206,7 @@ export async function handler(request: Request, config: Config): Promise<Handler
   const rules = Object.assign({}, defaultRules, config.rules);
 
   const fetchFn = config.fetchFn ?? global.fetch ?? window.fetch;
+  const finalConfig = { ...config, rules };
   const fetchFromOrigin =
     config.originFetch ?? ((spec) => defaultOriginFetch({ ...config, rules }, request, spec, fetchFn));
 
@@ -208,11 +214,10 @@ export async function handler(request: Request, config: Config): Promise<Handler
     return createResponse(await fetchFn(request));
   }
 
-  //TODO: check if incoming is json
+  const isPassThrough = await (finalConfig.isPassthroughRequest
+    ? finalConfig.isPassthroughRequest(request, finalConfig)
+    : isPassthroughRequest(request, finalConfig.passThroughHash));
 
-  const randomSecretForTimingAttack = await generateRandomSecretKey();
-
-  const isPassThrough = await isPassthroughRequest(request, config.passThroughHash);
   const hashHeader = getOperationHashFromHeader(request);
 
   if (!isPassThrough && rules.sign_secret) {
@@ -251,7 +256,10 @@ export async function handler(request: Request, config: Config): Promise<Handler
     const secret = typeof rules.sign_secret === 'string' ? rules.sign_secret : rules.sign_secret.secret;
     const algo = typeof rules.sign_secret === 'object' ? rules.sign_secret.algorithm : 'SHA-256';
 
-    const value = await getHMACFromQuery(stableQuery, secret, algo);
+    const [randomSecretForTimingAttack, value] = await Promise.all([
+      generateRandomSecretKey(),
+      getHMACFromQuery(stableQuery, secret, algo),
+    ]);
     const verified = hashHeader !== null && (await webTimingSafeEqual(randomSecretForTimingAttack, hashHeader, value));
 
     if (!verified) {
@@ -271,8 +279,9 @@ export async function handler(request: Request, config: Config): Promise<Handler
 
   const origin_start_request = Date.now();
 
-  const originRequest = {
+  const originRequest: OriginRequest = {
     document: document,
+    isPassThrough: isPassThrough,
     headers: headers,
     query: body.query,
     operationName: body.operationName,
@@ -294,7 +303,11 @@ export async function handler(request: Request, config: Config): Promise<Handler
 
   const contentType = originResponse.headers.get('content-type') ?? '';
 
-  if (!originResponse.ok || !contentType.includes('application/json') || isPassThrough) {
+  if (
+    !originResponse.ok ||
+    isPassThrough ||
+    !(contentType.includes('application/json') || contentType.includes('application/graphql-response+json'))
+  ) {
     return createResponse(originResponse, report);
   }
 
