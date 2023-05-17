@@ -1,31 +1,53 @@
 import { NextFetchEvent, NextRequest } from 'next/server';
-
-import { Config, handler } from '@graphql-edge/proxy';
+import { Config, proxy } from '@graphql-edge/proxy';
+import { createOperationParseFn, createOperationStore } from '@graphql-edge/proxy/lib/operations';
 
 const proxyConfig: Config = {
-  url: 'https://countries.trevorblades.com',
+  originURL: 'https://countries.trevorblades.com',
   // sha-256 hash of "pass-through"
-  passThroughHash: '14652aa39beeaf35b41963fdcda76c67023bcb6339f91f0c7f8177c7f7a3193b',
-  rules: {
-    sign_secret: 'some-secret',
-    maxTokens: 100,
+  responseRules: {
     removeExtensions: true,
   },
 };
+
+const store = createOperationStore([
+  {
+    behaviour: {},
+    operationName: 'me',
+    operationType: 'query',
+    query: `
+    query me {  
+      countries  {
+        code
+        name
+        capital
+        code
+        emoji
+        emojiU
+        languages {code}
+        states {code country{ continent { name code }}}
+      } 
+    }`,
+  },
+]);
+
+const parseFn = createOperationParseFn(store);
 
 export const config = {
   runtime: 'edge',
 };
 
 export default async function MyEdgeFunction(request: NextRequest, ctx: NextFetchEvent) {
-  const { report, response } = await handler(request, proxyConfig);
+  const time = Date.now();
+  const parsedQuery = await parseFn(request);
+  const { report, response } = await proxy(parsedQuery, proxyConfig);
   if (report) {
     ctx.waitUntil(
       Promise.resolve(report).then((d) => {
+        // eslint-disable-next-line no-console
         console.log({
-          status: d.originResponse.status,
-          duration: Date.now() - report.timings.origin_end_request,
-          headers: d.originResponse.headers,
+          status: d.originResponse?.status,
+          duration: Date.now() - time,
         });
       })
     );
