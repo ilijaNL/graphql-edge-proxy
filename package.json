@@ -54,6 +54,24 @@
     "tsup": "^6.6.0",
     "typescript": "^4.9.0"
   },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "require": "./lib/index.js",
+      "import": "./lib/index.js"
+    },
+    "./lib/operations": {
+      "types": "./lib/operations.d.ts",
+      "require": "./lib/operations.js",
+      "import": "./lib/operations.js"
+    },
+    "./lib/signature": {
+      "types": "./lib/signature.d.ts",
+      "require": "./lib/signature.js",
+      "import": "./lib/signature.js"
+    },
+    "./package.json": "./package.json"
+  },
   "dependencies": {
     "@graphql-tools/documents": "^0.1.0",
     "@whatwg-node/fetch": "^0.8.8",
