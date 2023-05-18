@@ -12,6 +12,38 @@ const defaultConfig: Config = {
   },
 };
 
+tap.test('correctly sets headers', async (t) => {
+  const q = 'query me { me }';
+  const req = new Request('http://test.localhost', {
+    method: 'POST',
+    headers: new Headers({
+      Host: 'test.localhost',
+      'x-forwarded-proto': 'http',
+    }),
+    body: JSON.stringify({
+      query: q,
+    }),
+  });
+
+  const { response: resp } = await proxy(
+    { headers: req.headers, query: q },
+    {
+      ...defaultConfig,
+      originFetch: async (url, request) => {
+        console.log({ headers: request.headers });
+        t.equal(request.headers.get('X-Forwarded-Host'), 'test.localhost');
+        t.equal(request.headers.get('content-type'), 'application/json');
+        t.equal(request.headers.get('x-forwarded-proto'), 'http');
+        return new Response('ok');
+      },
+    }
+  );
+  const text = await resp.text();
+
+  t.equal(resp.status, 200);
+  t.equal(text, 'ok');
+});
+
 tap.test('not valid response from origin', async (t) => {
   const q = 'query me { me }';
   const req = new Request('http://test.localhost', {

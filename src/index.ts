@@ -117,6 +117,25 @@ function hasErrors(errors?: any[]): errors is any[] {
   return Boolean(errors) && Array.isArray(errors);
 }
 
+//
+export const applyForwardedHeaders = (requestHeaders: Headers): void => {
+  if (!requestHeaders.get('X-Forwarded-Proto')) {
+    requestHeaders.set('X-Forwarded-Proto', 'https');
+  }
+
+  const host = requestHeaders.get('Host');
+  if (host !== null) {
+    requestHeaders.set('X-Forwarded-Host', host);
+  }
+
+  const ip = requestHeaders.get('cf-connecting-ip') ?? requestHeaders.get('x-real-ip');
+
+  const forwardedForHeader = requestHeaders.get('X-Forwarded-For');
+  if (ip !== null && forwardedForHeader === null) {
+    requestHeaders.set('X-Forwarded-For', ip);
+  }
+};
+
 export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: Config): Promise<HandlerResponse> {
   const report: Report = {
     timings: {},
@@ -131,11 +150,18 @@ export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: 
   const requestHeaders = new Headers(parsedRequest.headers);
 
   // delete headers
-  requestHeaders.delete('content-length');
-  requestHeaders.delete('host');
 
   requestHeaders.set('origin', new URL(config.originURL).origin);
   requestHeaders.set('content-type', 'application/json');
+
+  // set forwarded headers
+  applyForwardedHeaders(requestHeaders);
+
+  // we are modifying the request
+  requestHeaders.delete('content-length');
+  requestHeaders.delete('content-encoding');
+  // remove this since it will be set by the underlying agent
+  requestHeaders.delete('host');
 
   const originRequest: ParsedRequest = {
     query: parsedRequest.query,
