@@ -1,6 +1,14 @@
 import { NextFetchEvent, NextRequest } from 'next/server';
 import { Config, proxy } from '@graphql-edge/proxy';
-import { createOperationParseFn, createOperationStore } from '@graphql-edge/proxy/lib/operations';
+import {
+  GeneratedOperation,
+  ValidationError,
+  createOperationParseFn,
+  createOperationStore,
+} from '@graphql-edge/proxy/lib/operations';
+import type { VariablesOf } from '@graphql-typed-document-node/core';
+import type { GetCountryDocument } from '../../__generated__/gql';
+import OperationList from '../../__generated__/operations.json';
 
 const proxyConfig: Config = {
   originURL: 'https://countries.trevorblades.com',
@@ -10,26 +18,13 @@ const proxyConfig: Config = {
   },
 };
 
-const store = createOperationStore([
-  {
-    behaviour: {},
-    operationName: 'me',
-    operationType: 'query',
-    query: `
-    query me {  
-      countries  {
-        code
-        name
-        capital
-        code
-        emoji
-        emojiU
-        languages {code}
-        states {code country{ continent { name code }}}
-      } 
-    }`,
-  },
-]);
+const store = createOperationStore(OperationList as Array<GeneratedOperation>);
+
+store.setValidateFn<VariablesOf<typeof GetCountryDocument>>('getCountry', (_, parsedReq) => {
+  if (!parsedReq.variables?.countryCode || parsedReq.variables?.countryCode.length < 2) {
+    return new ValidationError('not valid input');
+  }
+});
 
 const parseFn = createOperationParseFn(store);
 

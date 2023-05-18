@@ -30,17 +30,13 @@ const config: CodegenConfig = {
   documents: ['src/**/*.graphql'],
   generates: {
     './src/__generated__/gql.ts': {
-      plugins: ['typescript', 'typescript-operations'],
+      plugins: ['typescript', 'typescript-operations', 'typed-document-node'],
       config: {
         ...sharedConfig,
       },
     },
-    './src/__generated__/signed-operations.json': {
-      plugins: ['graphql-codegen-signed-operation'],
-      config: {
-        // should be long and not exposed to public
-        secret: 'some-secret',
-      },
+    './src/__generated__/operations.json': {
+      plugins: ['graphql-operation-list'],
     },
   },
 };
