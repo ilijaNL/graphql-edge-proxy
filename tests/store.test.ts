@@ -43,7 +43,7 @@ tap.test('rejects when not found', async (t) => {
   const { response } = await proxy(await parseFn(req), defaultConfig);
 
   t.equal(response.status, 404);
-  t.same(await response.json(), { message: 'operation not found' });
+  t.same(await response.json(), { message: 'operation 123 not found' });
 });
 
 tap.test('happy path', async (t) => {

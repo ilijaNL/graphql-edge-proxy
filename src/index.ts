@@ -7,9 +7,19 @@ export type ParsedRequest<Vars = Record<string, any>> = {
   headers: Headers;
 };
 
+export const errorCodeSymbol = Symbol('errorCode');
+export const errorMessageSymbol = Symbol('errorMessage');
+
 export type ParsedError = {
-  code: number;
-  message: string;
+  [errorCodeSymbol]: number;
+  [errorMessageSymbol]: string;
+};
+
+export const createError = (code: number, message: string): ParsedError => {
+  return {
+    [errorCodeSymbol]: code,
+    [errorMessageSymbol]: message,
+  };
 };
 
 const ErrorRegex = /Did you mean ".+"/g;
@@ -81,7 +91,7 @@ export type Report = {
   originResponse?: Response;
   originRequest?: ParsedRequest;
   ok: boolean;
-  errors?: Array<{ message: string }>;
+  errors?: Array<{ message: string } & Record<string, any>>;
   appliedRules?: Partial<Config['responseRules']>;
 };
 
@@ -91,6 +101,7 @@ export type HandlerResponse = {
 };
 
 export function createErrorResponse(report: Report, message: string, code: number): HandlerResponse {
+  report.errors = [{ message: message, code }];
   return {
     report: report,
     response: new Response(
@@ -113,8 +124,8 @@ export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: 
   };
 
   // probably shoud use symbol here
-  if ('code' in parsedRequest) {
-    return createErrorResponse(report, parsedRequest.message, parsedRequest.code);
+  if (errorCodeSymbol in parsedRequest) {
+    return createErrorResponse(report, parsedRequest[errorMessageSymbol], parsedRequest[errorCodeSymbol]);
   }
 
   const requestHeaders = new Headers(parsedRequest.headers);

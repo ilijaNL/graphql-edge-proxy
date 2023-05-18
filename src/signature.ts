@@ -1,5 +1,5 @@
 import { DocumentNode } from 'graphql';
-import { ParsedError, ParsedRequest } from '.';
+import { ParsedError, ParsedRequest, createError } from '.';
 import { bufferToHex, generateRandomSecretKey, hmacHex, webTimingSafeEqual } from './safe-compare';
 import { parse, printNormalized } from './utils';
 import { crypto } from '@whatwg-node/fetch';
@@ -68,10 +68,7 @@ export const createSignatureParseFn = (config: {
 
     if (!isPassThrough && sign_secret) {
       if (!hashHeader) {
-        return {
-          code: 403,
-          message: 'signature not defined',
-        };
+        return createError(403, 'signature not defined');
       }
     }
 
@@ -79,27 +76,18 @@ export const createSignatureParseFn = (config: {
     try {
       body = await request.json();
     } catch (e) {
-      return {
-        code: 403,
-        message: 'not valid body',
-      };
+      return createError(403, 'not valid body');
     }
 
     if (!body.query) {
-      return {
-        code: 403,
-        message: 'Missing query in body',
-      };
+      return createError(403, 'Missing query in body');
     }
 
     let document: DocumentNode;
     try {
       document = parse(body.query, config.maxTokens ?? 2000);
     } catch (e) {
-      return {
-        code: 403,
-        message: 'cannot parse query',
-      };
+      return createError(403, 'cannot parse query');
     }
     const stableQuery = printNormalized(document);
 
@@ -115,10 +103,7 @@ export const createSignatureParseFn = (config: {
         hashHeader !== null && (await webTimingSafeEqual(randomSecretForTimingAttack, hashHeader, value));
 
       if (!verified) {
-        return {
-          code: 403,
-          message: `Invalid ${OPERATION_HEADER_KEY} header`,
-        };
+        return createError(403, `Invalid ${OPERATION_HEADER_KEY} header`);
       }
     }
 
