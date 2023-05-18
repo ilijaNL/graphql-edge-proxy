@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.7
+
+### Patch Changes
+
+- Split up parsing with proxying
+
 ## 0.0.6
 
 ### Patch Changes
