@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@graphql-edge/proxy": "file:../..",
+    "@graphql-typed-document-node/core": "^3.2.0",
     "@types/node": "18.15.11",
     "@types/react": "18.0.32",
     "@types/react-dom": "18.0.11",
@@ -25,10 +26,12 @@
   },
   "devDependencies": {
     "@graphql-codegen/cli": "^3.2.2",
+    "@graphql-codegen/typed-document-node": "^4.0.1",
     "@graphql-codegen/typescript": "^3.0.3",
     "@graphql-codegen/typescript-operations": "^3.0.3",
     "concurrently": "^7.6.0",
     "graphql": "^16.6.0",
-    "graphql-codegen-signed-operation": "^0.0.1"
+    "graphql-codegen-signed-operation": "^0.0.1",
+    "graphql-operation-list": "^0.0.1"
   }
 }

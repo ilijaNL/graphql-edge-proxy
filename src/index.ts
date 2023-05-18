@@ -112,26 +112,25 @@ export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: 
     ok: false,
   };
 
+  // probably shoud use symbol here
   if ('code' in parsedRequest) {
     return createErrorResponse(report, parsedRequest.message, parsedRequest.code);
   }
 
-  const headers = new Headers(parsedRequest.headers);
+  const requestHeaders = new Headers(parsedRequest.headers);
 
   // delete headers
-  headers.delete('content-length');
-  headers.delete('host');
+  requestHeaders.delete('content-length');
+  requestHeaders.delete('host');
 
-  // do we need to delete this header?
-  headers.delete('origin');
-
-  headers.set('content-type', 'application/json');
+  requestHeaders.set('origin', new URL(config.originURL).origin);
+  requestHeaders.set('content-type', 'application/json');
 
   const originRequest: ParsedRequest = {
     query: parsedRequest.query,
     operationName: parsedRequest.operationName,
     variables: parsedRequest.variables,
-    headers: headers,
+    headers: requestHeaders,
   };
 
   report.originRequest = originRequest;
