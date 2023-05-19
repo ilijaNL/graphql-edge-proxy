@@ -63,7 +63,7 @@ export type ReportContext = {
   };
 };
 
-export function createReportHooks<TContext extends ReportContext>(): Hooks<TContext> {
+export function createReportHooks<TContext extends ReportContext>(): Hooks<ParsedRequest, TContext> {
   return {
     onRequestParsed(parsed, ctx) {
       ctx[kReportParsed] = {
@@ -157,33 +157,23 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
   const started_at = Date.now();
   const context = createEmptyReportContext();
 
-  async function collect(response: Response): Promise<Report> {
+  async function collect(response: Response, finalContext?: ReportContext): Promise<Report | null> {
     const collect_at = Date.now();
     const total = collect_at - started_at;
     const clonedResponse = response.clone();
 
-    const parsedRequest = context[kReportParsed];
-    const proxyResponse = context[kReportProxy];
-    const gqlResponse = context[kReportResponse];
+    const ctx = finalContext ?? context;
+
+    const parsedRequest = ctx[kReportParsed];
+    const proxyResponse = ctx[kReportProxy];
+    const gqlResponse = ctx[kReportResponse];
 
     const responseSize = +(
       clonedResponse.headers.get('content-size') ?? (await clonedResponse.arrayBuffer()).byteLength
     );
 
     if (!parsedRequest) {
-      return {
-        ok: false,
-        response_size: responseSize,
-        durations: {
-          parsing: 0,
-          processing: 0,
-          proxying: 0,
-          total: total,
-        },
-        // could not parse
-        inputSize: 0,
-        errors: [{ message: 'cannot parse' }],
-      };
+      return null;
     }
 
     const parsingDuration = parsedRequest.ts - started_at;

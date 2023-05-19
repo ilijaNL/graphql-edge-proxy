@@ -60,7 +60,7 @@ export const createSignatureParseFn = <T = unknown>(config: {
         algorithm: SignignAlgorithm;
       };
   maxTokens: number;
-}): ParseRequestFn<T> => {
+}): ParseRequestFn<ParsedRequest, T> => {
   return async function parseRequest(request) {
     const isPassThrough = await isPassthroughRequest(request, config.passThroughHash);
     const hashHeader = getOperationHashFromHeader(request);

@@ -1,8 +1,9 @@
 import { NextFetchEvent, NextRequest } from 'next/server';
-import { createHandler } from '@graphql-edge/proxy';
+import { createHandler, isParsedError } from '@graphql-edge/proxy';
 import { createReportHooks, createReport, ReportContext } from '@graphql-edge/proxy/lib/reporting';
 import {
   GeneratedOperation,
+  OpsDef,
   ValidationError,
   createOperationParseFn,
   createOperationStore,
@@ -25,18 +26,41 @@ export const config = {
 
 const reportHooks = createReportHooks();
 
-const handler = createHandler<ReportContext>('https://countries.trevorblades.com', createOperationParseFn(store), {
-  hooks: reportHooks,
+type Context = ReportContext & { def: OpsDef | null };
+
+const handler = createHandler('https://countries.trevorblades.com', createOperationParseFn(store), {
+  hooks: {
+    // use hook to assign data from parsed request to the context, which will be used for caching
+    onRequestParsed(parsed, ctx: Context) {
+      if (!isParsedError(parsed)) {
+        ctx.def = parsed.def;
+      }
+      reportHooks.onRequestParsed(parsed, ctx);
+    },
+    onProxied: reportHooks.onProxied,
+    onResponseParsed: reportHooks.onResponseParsed,
+  },
 });
 
-export default async function MyEdgeFunction(request: NextRequest, ctx: NextFetchEvent) {
-  ctx.passThroughOnException();
-  const { collect, context } = createReport();
+export default async function MyEdgeFunction(request: NextRequest, event: NextFetchEvent) {
+  event.passThroughOnException();
+  const report = createReport();
+
+  // this is mutable object
+  const context: Context = Object.assign(report.context, {
+    def: null,
+  });
   const response = await handler(request, context);
 
-  ctx.waitUntil(
-    collect(response).then((report) => {
-      console.log({ report: JSON.stringify(report, null, 2) });
+  const cacheTTL = context.def?.behaviour.ttl;
+
+  if (cacheTTL) {
+    response.headers.set('Cache-Control', `public, s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL}`);
+  }
+
+  event.waitUntil(
+    report.collect(response, context).then((report) => {
+      report && console.log({ report: JSON.stringify(report, null, 2) });
     })
   );
 

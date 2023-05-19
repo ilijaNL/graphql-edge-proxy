@@ -152,7 +152,7 @@ export type ParsedResult = ParsedRequest & { def: OpsDef };
 export const createOperationParseFn = <T = unknown>(
   operationStore: OperationStore,
   opts?: Partial<{ extractFn: ExtractFn }>
-): ParseRequestFn<T> => {
+): ParseRequestFn<ParsedResult, T> => {
   const finalOpts = Object.assign({ extractFn: defaultExtractFn }, opts);
 
   return async function parse(request) {
