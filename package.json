@@ -65,6 +65,11 @@
       "require": "./lib/operations.js",
       "import": "./lib/operations.js"
     },
+    "./lib/reporting": {
+      "types": "./lib/reporting.d.ts",
+      "require": "./lib/reporting.js",
+      "import": "./lib/reporting.js"
+    },
     "./lib/signature": {
       "types": "./lib/signature.d.ts",
       "require": "./lib/signature.js",

@@ -1,5 +1,6 @@
 import { NextFetchEvent, NextRequest } from 'next/server';
-import { Config, proxy } from '@graphql-edge/proxy';
+import { createHandler } from '@graphql-edge/proxy';
+import { createReportHooks, createReport, ReportContext } from '@graphql-edge/proxy/lib/reporting';
 import {
   GeneratedOperation,
   ValidationError,
@@ -10,14 +11,6 @@ import type { VariablesOf } from '@graphql-typed-document-node/core';
 import type { GetCountryDocument } from '../../__generated__/gql';
 import OperationList from '../../__generated__/operations.json';
 
-const proxyConfig: Config = {
-  originURL: 'https://countries.trevorblades.com',
-  // sha-256 hash of "pass-through"
-  responseRules: {
-    removeExtensions: true,
-  },
-};
-
 const store = createOperationStore(OperationList as Array<GeneratedOperation>);
 
 store.setValidateFn<VariablesOf<typeof GetCountryDocument>>('getCountry', (_, parsedReq) => {
@@ -26,27 +19,26 @@ store.setValidateFn<VariablesOf<typeof GetCountryDocument>>('getCountry', (_, pa
   }
 });
 
-const parseFn = createOperationParseFn(store);
-
 export const config = {
   runtime: 'edge',
 };
 
+const reportHooks = createReportHooks();
+
+const handler = createHandler<ReportContext>('https://countries.trevorblades.com', createOperationParseFn(store), {
+  hooks: reportHooks,
+});
+
 export default async function MyEdgeFunction(request: NextRequest, ctx: NextFetchEvent) {
-  const time = Date.now();
-  const parsedQuery = await parseFn(request);
-  const { report, response } = await proxy(parsedQuery, proxyConfig);
-  if (report) {
-    ctx.waitUntil(
-      Promise.resolve(report).then((d) => {
-        // eslint-disable-next-line no-console
-        console.log({
-          status: d.originResponse?.status,
-          duration: Date.now() - time,
-        });
-      })
-    );
-  }
+  ctx.passThroughOnException();
+  const { collect, context } = createReport();
+  const response = await handler(request, context);
+
+  ctx.waitUntil(
+    collect(response).then((report) => {
+      console.log({ report: JSON.stringify(report, null, 2) });
+    })
+  );
 
   return response;
 }

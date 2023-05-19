@@ -1,20 +1,13 @@
 import tap from 'tap';
-import { Config, proxy } from '../src';
+import { ProxyConfig, proxy, parseOriginResponse, errorCodeSymbol, errorMessageSymbol } from '../src';
 import { GeneratedOperation, ValidationError, createOperationParseFn, createOperationStore } from '../src/operations';
 import { Response, Request } from '@whatwg-node/fetch';
 
 const parseFn = createOperationParseFn(createOperationStore([]));
 
-const defaultConfig: Config = {
+const defaultConfig: ProxyConfig = {
   originURL: 'http://app.localhost',
-
   originFetch: async () => new Response('ok'),
-  // url: 'http://app.localhost',
-  // passThroughHash: crypto.createHash('sha256').update(defaultPassThroughSecret).digest('hex'),
-  responseRules: {
-    errorMasking: '[Suggestion hidden]',
-    removeExtensions: true,
-  },
 };
 
 const query = 'query me { me }';
@@ -25,10 +18,9 @@ tap.test('rejects when not found', async (t) => {
     body: JSON.stringify({}),
   });
 
-  const { response } = await proxy(await parseFn(req), defaultConfig);
-
-  t.equal(response.status, 404);
-  t.same(await response.json(), { message: 'no operation defined' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 404);
+  t.same(parsed[errorMessageSymbol], 'no operation defined');
 });
 
 tap.test('rejects when not found', async (t) => {
@@ -40,10 +32,9 @@ tap.test('rejects when not found', async (t) => {
     }),
   });
 
-  const { response } = await proxy(await parseFn(req), defaultConfig);
-
-  t.equal(response.status, 404);
-  t.same(await response.json(), { message: 'operation 123 not found' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 404);
+  t.same(parsed[errorMessageSymbol], 'operation 123 not found');
 });
 
 tap.test('happy path', async (t) => {
@@ -66,7 +57,7 @@ tap.test('happy path', async (t) => {
     }),
   });
   const parseFn = createOperationParseFn(createOperationStore(ops));
-  const { response } = await proxy(await parseFn(req), {
+  const response = await proxy(await parseFn(req, {}), {
     ...defaultConfig,
     originFetch: async (url, requestSpec) => {
       t.equal(requestSpec.query, query);
@@ -94,7 +85,7 @@ tap.test('happy path with get', async (t) => {
     method: 'GET',
   });
   const parseFn = createOperationParseFn(createOperationStore(ops));
-  const { response } = await proxy(await parseFn(req), {
+  const response = await proxy(await parseFn(req, {}), {
     ...defaultConfig,
     originFetch: async (url, requestSpec) => {
       t.equal(requestSpec.query, query);
@@ -109,7 +100,7 @@ tap.test('happy path with get', async (t) => {
     method: 'GET',
   });
 
-  const { response: resp2 } = await proxy(await parseFn(req), {
+  const resp2 = await proxy(await parseFn(req2, {}), {
     ...defaultConfig,
     originFetch: async (_, requestSpec) => {
       t.equal(requestSpec.query, query);
@@ -137,16 +128,10 @@ tap.test('not found when not post or get', async (t) => {
     method: 'PUT',
   });
   const parseFn = createOperationParseFn(createOperationStore(ops));
-  const { response } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    originFetch: async (_url, requestSpec) => {
-      t.equal(requestSpec.query, query);
-      return new Response('ok');
-    },
-  });
 
-  t.equal(response.status, 404);
-  t.same(await response.json(), { message: 'method not supported' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 404);
+  t.same(parsed[errorMessageSymbol], 'method not supported');
 });
 
 tap.test('validate passes', async (t) => {
@@ -185,7 +170,7 @@ tap.test('validate passes', async (t) => {
     method: 'GET',
   });
   const parseFn = createOperationParseFn(createOperationStore(ops));
-  const { response } = await proxy(await parseFn(req), {
+  const response = await proxy(await parseFn(req, {}), {
     ...defaultConfig,
     originFetch: async (_url, requestSpec) => {
       t.equal(requestSpec.query, query);
@@ -233,14 +218,8 @@ tap.test('validate fails', async (t) => {
     method: 'GET',
   });
   const parseFn = createOperationParseFn(store);
-  const { response } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    originFetch: async (_url, requestSpec) => {
-      t.equal(requestSpec.query, query);
-      return new Response('ok');
-    },
-  });
 
-  t.equal(response.status, 400);
-  t.same(await response.json(), { message: 'not valid input' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 400);
+  t.same(parsed[errorMessageSymbol], 'not valid input');
 });
