@@ -24,6 +24,7 @@ export default {
 
     ctx.waitUntil(
       collect(response, context).then((report) => {
+        // eslint-disable-next-line no-console
         report && console.log({ report: JSON.stringify(report, null, 2) });
       })
     );

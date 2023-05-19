@@ -60,6 +60,7 @@ export default async function MyEdgeFunction(request: NextRequest, event: NextFe
 
   event.waitUntil(
     report.collect(response, context).then((report) => {
+      // eslint-disable-next-line no-console
       report && console.log({ report: JSON.stringify(report, null, 2) });
     })
   );
