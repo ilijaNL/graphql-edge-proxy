@@ -165,35 +165,6 @@ tap.test('not valid response from origin', async (t) => {
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
 });
 
-// tap.test('cannot parse when different content-type', async (t) => {
-//   const query = 'query me {me}';
-//   const req = new Request('http://test.localhost', {
-//     method: 'POST',
-//     headers: new Headers({}),
-//     body: JSON.stringify({
-//       query: query,
-//     }),
-//   });
-
-//   const originResponse = await proxy(
-//     { headers: req.headers, query: query },
-//     {
-//       ...defaultConfig,
-//       originFetch: async () =>
-//         new Response(Buffer.from('ok'), {
-//           status: 200,
-//           headers: new Headers({
-//             'content-type': 'application/text',
-//           }),
-//         }),
-//     }
-//   );
-//   const resp = await parseOriginResponse(originResponse, parseOptions);
-
-//   t.equal(resp.status, 406);
-//   t.same(await resp.json(), { message: 'cannot parse response' });
-// });
-
 tap.test('error masking', async (t) => {
   const resp = await parseOriginResponse(
     {
