@@ -190,7 +190,11 @@ export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: 
   return originResponse;
 }
 
-export type ParseRequestFn<Context> = (request: Request, context: Context) => Promise<ParsedRequest | ParsedError>;
+export type ParseRequestFn<TParsed extends ParsedRequest, Context> = (
+  request: Request,
+  context: Context
+) => Promise<TParsed | ParsedError>;
+
 export type ProxyFn<Context> = (parsed: ParsedRequest | ParsedError, context: Context) => Promise<Response>;
 export type FormatOriginRespFn<Context> = (
   result: OriginGraphQLResponse,
@@ -204,25 +208,28 @@ export type OriginGraphQLResponse = {
   errors?: Array<any>;
 };
 
-export type Hooks<Context> = {
-  onRequestParsed: (parsed: ParsedRequest | ParsedError, ctx: Context) => void;
+export type Hooks<TParsedRequest extends ParsedRequest, Context> = {
+  onRequestParsed: (parsed: TParsedRequest | ParsedError, ctx: Context) => void;
   onProxied: (resp: Response, ctx: Context) => void;
   onResponseParsed: (gqlResponse: OriginGraphQLResponse, ctx: Context) => void;
 };
 
-export type CreateHandlerOpts<Context> = {
+export type CreateHandlerOpts<TParsedRequest extends ParsedRequest, Context> = {
   proxy: ProxyFn<Context>;
   formatOriginResp: FormatOriginRespFn<Context>;
-  hooks: Partial<Hooks<Context>>;
+  hooks: Partial<Hooks<TParsedRequest, Context>>;
 };
 
-export const createHandler = <Context>(
+export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
   originURL: string,
-  parseRequest: ParseRequestFn<Context>,
-  opts: Partial<CreateHandlerOpts<Context>>
+  parseRequest: ParseRequestFn<TParsedRequest, Context>,
+  opts: Partial<CreateHandlerOpts<TParsedRequest, Context>>
 ) => {
   const proxyConfig = { originURL: originURL };
-  const finalOpts = Object.assign<CreateHandlerOpts<Context>, Partial<CreateHandlerOpts<Context>>>(
+  const finalOpts = Object.assign<
+    CreateHandlerOpts<TParsedRequest, Context>,
+    Partial<CreateHandlerOpts<TParsedRequest, Context>>
+  >(
     {
       formatOriginResp: (parsedResponse, response) =>
         parseOriginResponse(parsedResponse, response, { errorMasking: '[Suggestion hidden]', removeExtensions: false }),

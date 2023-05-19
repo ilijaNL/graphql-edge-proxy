@@ -34,14 +34,15 @@ tap.test('happy path', async (t) => {
     })
   );
 
-  const collected = await report.collect(
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const collected = (await report.collect(
     new Response(respPayload, {
       status: 200,
       headers: new Headers({
         'content-type': 'application/json',
       }),
     })
-  );
+  ))!;
 
   t.same(collected.inputSize, Buffer.from(JSON.stringify({ v1: true })).byteLength);
   t.same(collected.ok, true);
@@ -75,14 +76,15 @@ tap.test('parse error', async (t) => {
 
   reportHooks.onRequestParsed(createParseError(404, 'test'), report.context);
 
-  const collected = await report.collect(
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const collected = (await report.collect(
     new Response(respPayload, {
       status: 200,
       headers: new Headers({
         'content-type': 'application/json',
       }),
     })
-  );
+  ))!;
 
   t.equal(collected.ok, false);
   t.equal(collected.response_size, respPayload.byteLength);
@@ -122,16 +124,7 @@ tap.test('no hooks called', async (t) => {
     })
   );
 
-  t.equal(collected.ok, false);
-  t.equal(collected.response_size, respPayload.byteLength);
-  t.equal(collected.durations.parsing, 0);
-  t.equal(collected.durations.processing, 0);
-  t.equal(collected.durations.proxying, 0);
-  t.ok(collected.durations.total >= 10);
-  t.equal(collected.inputSize, 0);
-  t.same(collected.errors, [{ message: 'cannot parse' }]);
-  t.same(collected.query, undefined);
-  t.same(collected.operationName, undefined);
+  t.equal(collected, null);
 });
 
 tap.test('happy path with errors', async (t) => {
@@ -160,14 +153,15 @@ tap.test('happy path with errors', async (t) => {
     })
   );
 
-  const collected = await report.collect(
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const collected = (await report.collect(
     new Response(respPayload, {
       status: 200,
       headers: new Headers({
         'content-type': 'application/json',
       }),
     })
-  );
+  ))!;
 
   t.same(collected.ok, false);
   t.same(collected.response_size, respPayload.byteLength);
@@ -219,14 +213,15 @@ tap.test('happy path with response_map', async (t) => {
     })
   );
 
-  const collected = await report.collect(
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+  const collected = (await report.collect(
     new Response(respPayload, {
       status: 200,
       headers: new Headers({
         'content-type': 'application/json',
       }),
     })
-  );
+  ))!;
 
   t.same(collected.ok, true);
   t.same(collected.response_size, respPayload.byteLength);

@@ -1,5 +1,5 @@
 import tap from 'tap';
-import { ProxyConfig, proxy, parseOriginResponse, errorCodeSymbol, errorMessageSymbol } from '../src';
+import { ProxyConfig, proxy, errorCodeSymbol, errorMessageSymbol } from '../src';
 import { GeneratedOperation, ValidationError, createOperationParseFn, createOperationStore } from '../src/operations';
 import { Response, Request } from '@whatwg-node/fetch';
 

@@ -1,6 +1,8 @@
 [
   {
-    "behaviour": {},
+    "behaviour": {
+      "ttl": 10
+    },
     "operationName": "getCountry",
     "operationType": "query",
     "query": "query getCountry($countryCode: String!) { country: countries(filter: {code: {eq: $countryCode}}) { capital code name } }"

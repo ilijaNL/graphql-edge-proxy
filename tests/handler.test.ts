@@ -20,7 +20,7 @@ tap.test('happy path', async (t) => {
     }),
   });
 
-  const handler = createHandler<{ prop: string }>(
+  const handler = createHandler<ParsedRequest, { prop: string }>(
     defaultConfig.originURL,
     async (req, ctx) => {
       t.equal(ctx.prop, 'ctx');

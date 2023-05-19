@@ -12,7 +12,7 @@ const parseFn = createSignatureParseFn({
 
 const reportHooks = createReportHooks();
 
-const handler = createHandler<ReportContext>('https://countries.trevorblades.com', parseFn, {
+const handler = createHandler('https://countries.trevorblades.com', parseFn, {
   hooks: reportHooks,
 });
 
@@ -23,8 +23,8 @@ export default {
     const response = await handler(request, context);
 
     ctx.waitUntil(
-      collect(response).then((report) => {
-        console.log({ report: JSON.stringify(report, null, 2) });
+      collect(response, context).then((report) => {
+        report && console.log({ report: JSON.stringify(report, null, 2) });
       })
     );
 
