@@ -1,11 +1,4 @@
-import {
-  CreateHandlerOpts,
-  OriginGraphQLResponse,
-  ParsedError,
-  ParsedRequest,
-  errorMessageSymbol,
-  isParsedError,
-} from '.';
+import { Hooks, OriginGraphQLResponse, ParsedError, ParsedRequest, errorMessageSymbol, isParsedError } from '.';
 
 export type Report = {
   /**
@@ -70,7 +63,7 @@ export type ReportContext = {
   };
 };
 
-export function createReportHooks<TContext extends ReportContext>(): CreateHandlerOpts<TContext>['hooks'] {
+export function createReportHooks<TContext extends ReportContext>(): Hooks<TContext> {
   return {
     onRequestParsed(parsed, ctx) {
       ctx[kReportParsed] = {
@@ -173,7 +166,9 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
     const proxyResponse = context[kReportProxy];
     const gqlResponse = context[kReportResponse];
 
-    const responseSize = (await clonedResponse.arrayBuffer()).byteLength;
+    const responseSize = +(
+      clonedResponse.headers.get('content-size') ?? (await clonedResponse.arrayBuffer()).byteLength
+    );
 
     if (!parsedRequest) {
       return {
@@ -217,8 +212,6 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
         (gqlResponse.resp.errors === undefined ||
           (Array.isArray(gqlResponse.resp.errors) && gqlResponse.resp.errors.length === 0)),
       response_size: responseSize,
-      // calculate this
-      // responseFields: new Map(),
       response_map: options.calculateResponse && gqlResponse ? calculateResponseMap(gqlResponse.resp.data) : undefined,
       inputSize: calculateSize(parsedRequest.parsed.variables),
       errors:

@@ -1,4 +1,4 @@
-import { ParseRequestFn, ParsedRequest, createError } from '.';
+import { ParseRequestFn, ParsedRequest, createParseError } from '.';
 
 export type OperationType = 'query' | 'mutation' | 'subscription';
 
@@ -160,19 +160,19 @@ export const createOperationParseFn = <T = unknown>(
     try {
       extracted = await finalOpts.extractFn(request);
     } catch (e: any) {
-      return createError(404, e.message ?? 'cannot extract request');
+      return createParseError(404, e.message ?? 'cannot extract request');
     }
 
     const operation = extracted.operation;
 
     if (!operation || typeof operation !== 'string') {
-      return createError(404, 'no operation defined');
+      return createParseError(404, 'no operation defined');
     }
 
     const def = operationStore.getOperation(operation);
 
     if (!def) {
-      return createError(404, `operation ${operation} not found`);
+      return createParseError(404, `operation ${operation} not found`);
     }
 
     const validateFn = operationStore.getValidateFn(def.operationName);
@@ -189,7 +189,7 @@ export const createOperationParseFn = <T = unknown>(
       const error = validateFn(def, result, { originalRequest: request });
 
       if (error) {
-        return createError(400, error.message ?? 'input validation');
+        return createParseError(400, error.message ?? 'input validation');
       }
     }
 

@@ -23,7 +23,7 @@ export type ParsedError = {
   [errorMessageSymbol]: string;
 };
 
-export const createError = (code: number, message: string): ParsedError => {
+export const createParseError = (code: number, message: string): ParsedError => {
   return {
     [errorCodeSymbol]: code,
     [errorMessageSymbol]: message,
@@ -204,14 +204,16 @@ export type OriginGraphQLResponse = {
   errors?: Array<any>;
 };
 
+export type Hooks<Context> = {
+  onRequestParsed: (parsed: ParsedRequest | ParsedError, ctx: Context) => void;
+  onProxied: (resp: Response, ctx: Context) => void;
+  onResponseParsed: (gqlResponse: OriginGraphQLResponse, ctx: Context) => void;
+};
+
 export type CreateHandlerOpts<Context> = {
   proxy: ProxyFn<Context>;
   formatOriginResp: FormatOriginRespFn<Context>;
-  hooks: Partial<{
-    onRequestParsed: (parsed: ParsedRequest | ParsedError, ctx: Context) => void;
-    onProxied: (resp: Response, ctx: Context) => void;
-    onResponseParsed: (gqlResponse: OriginGraphQLResponse, ctx: Context) => void;
-  }>;
+  hooks: Partial<Hooks<Context>>;
 };
 
 export const createHandler = <Context>(
