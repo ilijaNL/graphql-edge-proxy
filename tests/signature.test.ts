@@ -1,4 +1,4 @@
-import { Config, proxy } from '../src';
+import { ProxyConfig, errorCodeSymbol, errorMessageSymbol, proxy } from '../src';
 import { createSignatureParseFn, OPERATION_HEADER_KEY, PASSTHROUGH_HEADER_KEY } from '../src/signature';
 import tap from 'tap';
 import { Headers, Response, Request } from '@whatwg-node/fetch';
@@ -17,7 +17,7 @@ const signOptions = {
 
 const parseFn = createSignatureParseFn(signOptions);
 
-const defaultConfig: Config = {
+const defaultConfig: ProxyConfig = {
   originURL: 'http://app.localhost',
   originFetch: async () => new Response('ok'),
 };
@@ -36,12 +36,9 @@ tap.test('no hash header set', async (t) => {
     }),
   });
 
-  const parsed = await parseFn(req);
-
-  const { response: resp } = await proxy(parsed, defaultConfig);
-  const text = await resp.json();
-  t.equal(resp.status, 403);
-  t.same(text, { message: 'signature not defined' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], 'signature not defined');
 });
 
 tap.test('no query defined on body', async (t) => {
@@ -55,10 +52,9 @@ tap.test('no query defined on body', async (t) => {
     }),
   });
 
-  const { response: resp } = await proxy(await parseFn(req), defaultConfig);
-  const text = await resp.json();
-  t.equal(resp.status, 403);
-  t.same(text, { message: 'Missing query in body' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], 'Missing query in body');
 });
 
 tap.test('not valid document provided', async (t) => {
@@ -72,13 +68,10 @@ tap.test('not valid document provided', async (t) => {
     }),
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-  });
-  const text = await resp.json();
-  t.equal(resp.status, 403);
+  const parsed: any = await parseFn(req, {});
 
-  t.same(text, { message: 'cannot parse query' });
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], 'cannot parse query');
 });
 
 tap.test('not valid hash provided', async (t) => {
@@ -92,12 +85,9 @@ tap.test('not valid hash provided', async (t) => {
     }),
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-  });
-  const text = await resp.json();
-  t.equal(resp.status, 403);
-  t.same(text, { message: `Invalid ${OPERATION_HEADER_KEY} header` });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
 tap.test('signed with diff secret', async (t) => {
@@ -113,19 +103,9 @@ tap.test('signed with diff secret', async (t) => {
     }),
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    async originFetch() {
-      return new Response(Buffer.from('ok'), {
-        status: 200,
-        headers: new Headers({
-          'content-type': 'application/text',
-        }),
-      });
-    },
-  });
-  t.equal(resp.status, 403);
-  t.same(await resp.json(), { message: `Invalid ${OPERATION_HEADER_KEY} header` });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
 tap.test('signed with custom algorithms', async (t) => {
@@ -150,19 +130,9 @@ tap.test('signed with custom algorithms', async (t) => {
     },
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    async originFetch() {
-      return new Response(Buffer.from(''), {
-        status: 200,
-        headers: new Headers({
-          'content-type': 'application/text',
-        }),
-      });
-    },
-  });
-  t.equal(resp.status, 403);
-  t.same(await resp.json(), { message: `Invalid ${OPERATION_HEADER_KEY} header` });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], `Invalid ${OPERATION_HEADER_KEY} header`);
 });
 
 tap.test('not valid json body', async (t) => {
@@ -176,19 +146,9 @@ tap.test('not valid json body', async (t) => {
     body: 'wawdaw',
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    async originFetch() {
-      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
-        status: 200,
-        headers: new Headers({
-          'content-type': 'application/json',
-        }),
-      });
-    },
-  });
-  t.equal(resp.status, 403);
-  t.same(await resp.json(), { message: 'not valid body' });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed[errorCodeSymbol], 403);
+  t.same(parsed[errorMessageSymbol], 'not valid body');
 });
 
 tap.test('signed with custom algorithms', async (t) => {
@@ -213,19 +173,9 @@ tap.test('signed with custom algorithms', async (t) => {
     },
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    async originFetch() {
-      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
-        status: 200,
-        headers: new Headers({
-          'content-type': 'application/json',
-        }),
-      });
-    },
-  });
-  t.equal(resp.status, 200);
-  t.same(await resp.json(), { data: { me: 'works' } });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed.query, 'query me {me}');
+  t.equal(parsed.isPassthrough, false);
 });
 
 tap.test('skips signature when sign_secret is null', async (t) => {
@@ -243,19 +193,9 @@ tap.test('skips signature when sign_secret is null', async (t) => {
     passThroughHash: '123',
   });
 
-  const { response: resp } = await proxy(await parseFn(req), {
-    ...defaultConfig,
-    async originFetch() {
-      return new Response(Buffer.from(JSON.stringify({ data: { me: 'works' } })), {
-        status: 200,
-        headers: new Headers({
-          'content-type': 'application/json',
-        }),
-      });
-    },
-  });
-
-  t.same(await resp.json(), { data: { me: 'works' } });
+  const parsed: any = await parseFn(req, {});
+  t.equal(parsed.query, 'query me { me }');
+  t.equal(parsed.isPassthrough, false);
 });
 
 tap.test('pass through', async (t) => {
@@ -271,7 +211,7 @@ tap.test('pass through', async (t) => {
       }),
     });
 
-    const { response: resp } = await proxy(await parseFn(req), {
+    const resp = await proxy(await parseFn(req, {}), {
       ...defaultConfig,
       async originFetch() {
         return new Response(Buffer.from('works'), {
@@ -298,7 +238,7 @@ tap.test('pass through', async (t) => {
       }),
     });
 
-    const { response: resp } = await proxy(await parseFn(req), {
+    const resp = await proxy(await parseFn(req, {}), {
       ...defaultConfig,
       async originFetch() {
         return new Response(Buffer.from('works'), {

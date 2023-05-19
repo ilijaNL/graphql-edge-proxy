@@ -7,6 +7,14 @@ export type ParsedRequest<Vars = Record<string, any>> = {
   headers: Headers;
 };
 
+export function isParsedError(parsed: ParsedRequest | ParsedError): parsed is ParsedError {
+  if (errorCodeSymbol in parsed) {
+    return true;
+  }
+
+  return false;
+}
+
 export const errorCodeSymbol = Symbol('errorCode');
 export const errorMessageSymbol = Symbol('errorMessage');
 
@@ -53,12 +61,7 @@ const defaultOriginRequest: OriginRequestFn = (url, request) => {
   return fetch(newReq);
 };
 
-export type Config = {
-  /**
-   * Query store.
-   * use `createQueryStore` to create a store from generated operations
-   */
-  // store: QueryStore;
+export type ProxyConfig = {
   /**
    * The origin graphql url
    */
@@ -67,50 +70,28 @@ export type Config = {
    *
    */
   originFetch?: OriginRequestFn;
-  /**
-   * Rules that are applied when to the response
-   */
-  responseRules?: Partial<{
-    /**
-     * Remove the extensions from the origin response
-     */
-    removeExtensions: boolean;
-    /**
-     * Mask errors
-     */
-    errorMasking: string | null;
-  }>;
 };
 
-export type Report = {
-  timings: {
-    origin_start_request?: number;
-    origin_end_request?: number;
-    origin_end_parsing_request?: number;
-  };
-  originResponse?: Response;
-  originRequest?: ParsedRequest;
-  ok: boolean;
-  errors?: Array<{ message: string } & Record<string, any>>;
-  appliedRules?: Partial<Config['responseRules']>;
-};
+// export type Report = {
+//   timings: {
+//     origin_start_request?: number;
+//     origin_end_request?: number;
+//     origin_end_parsing_request?: number;
+//   };
+//   originResponse?: Response;
+//   originRequest?: ParsedRequest;
+//   ok: boolean;
+//   errors?: Array<{ message: string } & Record<string, any>>;
+//   appliedRules?: Partial<Config['responseRules']>;
+// };
 
-export type HandlerResponse = {
-  response: Response;
-  report: Report;
-};
-
-export function createErrorResponse(report: Report, message: string, code: number): HandlerResponse {
-  report.errors = [{ message: message, code }];
-  return {
-    report: report,
-    response: new Response(
-      JSON.stringify({
-        message: message,
-      }),
-      { status: code }
-    ),
-  };
+export function createErrorResponse(message: string, code: number): Response {
+  return new Response(
+    JSON.stringify({
+      message: message,
+    }),
+    { status: code }
+  );
 }
 
 function hasErrors(errors?: any[]): errors is any[] {
@@ -136,15 +117,48 @@ export const applyForwardedHeaders = (requestHeaders: Headers): void => {
   }
 };
 
-export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: Config): Promise<HandlerResponse> {
-  const report: Report = {
-    timings: {},
-    ok: false,
-  };
+export type ParseOptions = {
+  errorMasking: string;
+  removeExtensions: boolean;
+};
 
-  // probably shoud use symbol here
-  if (errorCodeSymbol in parsedRequest) {
-    return createErrorResponse(report, parsedRequest[errorMessageSymbol], parsedRequest[errorCodeSymbol]);
+/**
+ * Parse the origin response and apply some parsing options
+ */
+export async function parseOriginResponse(
+  gqlResponse: OriginGraphQLResponse,
+  originResponse: Response,
+  parseOptions?: Partial<ParseOptions>
+): Promise<Response> {
+  const errors = gqlResponse.errors;
+
+  const _hasErrors = hasErrors(errors);
+  const errorMaskingRule = parseOptions?.errorMasking;
+
+  // check if has errors
+  if (errorMaskingRule && _hasErrors) {
+    gqlResponse.errors = errors.map((e: any) => maskError(e, errorMaskingRule));
+  }
+
+  if (parseOptions?.removeExtensions === true && gqlResponse['extensions']) {
+    delete gqlResponse['extensions'];
+  }
+
+  const resultHeader = new Headers(originResponse.headers);
+
+  resultHeader.delete('content-encoding');
+  resultHeader.delete('content-length');
+
+  resultHeader.set('content-type', 'application/json; charset=utf-8');
+
+  return new Response(JSON.stringify(gqlResponse), {
+    headers: resultHeader,
+  });
+}
+
+export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: ProxyConfig): Promise<Response> {
+  if (isParsedError(parsedRequest)) {
+    return createErrorResponse(parsedRequest[errorMessageSymbol], parsedRequest[errorCodeSymbol]);
   }
 
   const requestHeaders = new Headers(parsedRequest.headers);
@@ -170,71 +184,74 @@ export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: 
     headers: requestHeaders,
   };
 
-  report.originRequest = originRequest;
-  report.timings.origin_start_request = Date.now();
-
   const originResponse = await (config.originFetch?.(config.originURL, originRequest) ??
     defaultOriginRequest(config.originURL, originRequest));
 
-  const contentType = originResponse.headers.get('content-type') ?? '';
-
-  report.originResponse = originResponse.clone();
-  report.timings.origin_end_request = Date.now();
-
-  if (
-    !originResponse.ok ||
-    !(contentType.includes('application/json') || contentType.includes('application/graphql-response+json'))
-  ) {
-    return {
-      report: report,
-      response: originResponse,
-    };
-  }
-
-  const rules = config.responseRules;
-
-  if (!rules) {
-    // we don't know actually
-    report.ok = originResponse.ok;
-    return {
-      report: report,
-      response: originResponse,
-    };
-  }
-
-  const payload: { data?: any; errors?: any[]; extensions?: any } = await originResponse.json();
-
-  const errors = payload.errors;
-
-  const _hasErrors = hasErrors(errors);
-  const errorMaskingRule = rules.errorMasking;
-
-  report.timings.origin_end_parsing_request = Date.now();
-  report.appliedRules = {};
-  report.ok = _hasErrors ? errors.length === 0 : false;
-  report.errors = _hasErrors ? errors : undefined;
-
-  // check if has errors
-  if (errorMaskingRule && _hasErrors) {
-    report.appliedRules.errorMasking = errorMaskingRule;
-    payload.errors = errors.map((e: any) => maskError(e, errorMaskingRule));
-  }
-
-  if (rules.removeExtensions) {
-    report.appliedRules.removeExtensions = rules.removeExtensions;
-    delete payload['extensions'];
-  }
-
-  const response = new Response(JSON.stringify(payload), originResponse);
-
-  // since we transformed the resulted payload, delete this
-  response.headers.delete('content-encoding');
-  response.headers.delete('content-length');
-
-  response.headers.set('content-type', 'application/json; charset=utf-8');
-
-  return {
-    report: report,
-    response: response,
-  };
+  return originResponse;
 }
+
+export type ParseRequestFn<Context> = (request: Request, context: Context) => Promise<ParsedRequest | ParsedError>;
+export type ProxyFn<Context> = (parsed: ParsedRequest | ParsedError, context: Context) => Promise<Response>;
+export type FormatOriginRespFn<Context> = (
+  result: OriginGraphQLResponse,
+  originResponse: Response,
+  context: Context
+) => Promise<Response>;
+
+export type OriginGraphQLResponse = {
+  data?: any;
+  extensions?: Array<any>;
+  errors?: Array<any>;
+};
+
+export type CreateHandlerOpts<Context> = {
+  proxy: ProxyFn<Context>;
+  formatOriginResp: FormatOriginRespFn<Context>;
+  hooks: Partial<{
+    onRequestParsed: (parsed: ParsedRequest | ParsedError, ctx: Context) => void;
+    onProxied: (resp: Response, ctx: Context) => void;
+    onResponseParsed: (gqlResponse: OriginGraphQLResponse, ctx: Context) => void;
+  }>;
+};
+
+export const createHandler = <Context>(
+  originURL: string,
+  parseRequest: ParseRequestFn<Context>,
+  opts: Partial<CreateHandlerOpts<Context>>
+) => {
+  const proxyConfig = { originURL: originURL };
+  const finalOpts = Object.assign<CreateHandlerOpts<Context>, Partial<CreateHandlerOpts<Context>>>(
+    {
+      formatOriginResp: (parsedResponse, response) =>
+        parseOriginResponse(parsedResponse, response, { errorMasking: '[Suggestion hidden]', removeExtensions: false }),
+      proxy: (parsed) => proxy(parsed, proxyConfig),
+      hooks: {},
+    },
+    opts
+  );
+
+  return async function handle(request: Request, ctx: Context) {
+    const parsed = await parseRequest(request, ctx);
+
+    finalOpts?.hooks?.onRequestParsed?.(parsed, ctx);
+
+    const proxyResponse = await finalOpts.proxy(parsed, ctx);
+
+    finalOpts?.hooks?.onProxied?.(proxyResponse, ctx);
+
+    if (!proxyResponse.ok) {
+      return proxyResponse;
+    }
+
+    const contentType = proxyResponse.headers.get('content-type') ?? '';
+    if (!(contentType.includes('application/json') || contentType.includes('application/graphql-response+json'))) {
+      return createErrorResponse('cannot parse response', 406);
+    }
+
+    const payload: OriginGraphQLResponse = await proxyResponse.json();
+
+    finalOpts.hooks.onResponseParsed?.(payload, ctx);
+
+    return finalOpts.formatOriginResp(payload, proxyResponse, ctx);
+  };
+};

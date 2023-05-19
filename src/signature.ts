@@ -1,5 +1,5 @@
 import { DocumentNode } from 'graphql';
-import { ParsedError, ParsedRequest, createError } from '.';
+import { ParseRequestFn, ParsedRequest, createError } from '.';
 import { bufferToHex, generateRandomSecretKey, hmacHex, webTimingSafeEqual } from './safe-compare';
 import { parse, printNormalized } from './utils';
 import { crypto } from '@whatwg-node/fetch';
@@ -46,7 +46,7 @@ export type ParsedResponse = ParsedRequest & {
 /**
  * Creates a parse function which validates a request against a signature header or a passthrough header
  */
-export const createSignatureParseFn = (config: {
+export const createSignatureParseFn = <T = unknown>(config: {
   passThroughHash: string;
   signSecret:
     | string
@@ -60,8 +60,8 @@ export const createSignatureParseFn = (config: {
         algorithm: SignignAlgorithm;
       };
   maxTokens: number;
-}) => {
-  return async function parseRequest(request: Request): Promise<ParsedError | ParsedResponse> {
+}): ParseRequestFn<T> => {
+  return async function parseRequest(request) {
     const isPassThrough = await isPassthroughRequest(request, config.passThroughHash);
     const hashHeader = getOperationHashFromHeader(request);
     const sign_secret = config.signSecret;

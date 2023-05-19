@@ -1,12 +1,6 @@
-import { Config, proxy } from '@graphql-edge/proxy';
+import { createHandler } from '@graphql-edge/proxy';
 import { createSignatureParseFn } from '@graphql-edge/proxy/lib/signature';
-
-const proxyConfig: Config = {
-  originURL: 'https://countries.trevorblades.com',
-  responseRules: {
-    removeExtensions: true,
-  },
-};
+import { createReportHooks, createReport, ReportContext } from '@graphql-edge/proxy/lib/reporting';
 
 // signature parse fn
 const parseFn = createSignatureParseFn({
@@ -16,21 +10,23 @@ const parseFn = createSignatureParseFn({
   signSecret: 'some-secret',
 });
 
+const reportHooks = createReportHooks();
+
+const handler = createHandler<ReportContext>('https://countries.trevorblades.com', parseFn, {
+  hooks: reportHooks,
+});
+
 export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
-    const parsedReq = await parseFn(request);
-    const { report, response } = await proxy(parsedReq, proxyConfig);
-    if (report) {
-      ctx.waitUntil(
-        Promise.resolve(report).then((d) => {
-          // eslint-disable-next-line no-console
-          console.log({
-            status: d.originResponse?.status,
-            duration: Date.now() - report.timings.origin_start_request,
-          });
-        })
-      );
-    }
+    ctx.passThroughOnException();
+    const { collect, context } = createReport();
+    const response = await handler(request, context);
+
+    ctx.waitUntil(
+      collect(response).then((report) => {
+        console.log({ report: JSON.stringify(report, null, 2) });
+      })
+    );
 
     return response;
   },

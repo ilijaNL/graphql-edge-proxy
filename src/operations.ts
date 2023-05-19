@@ -1,4 +1,4 @@
-import { ParsedError, ParsedRequest, createError } from '.';
+import { ParseRequestFn, ParsedRequest, createError } from '.';
 
 export type OperationType = 'query' | 'mutation' | 'subscription';
 
@@ -149,10 +149,13 @@ export type ParsedResult = ParsedRequest & { def: OpsDef };
  * Create parse function where every query is stored
  *
  */
-export const createOperationParseFn = (operationStore: OperationStore, opts?: Partial<{ extractFn: ExtractFn }>) => {
+export const createOperationParseFn = <T = unknown>(
+  operationStore: OperationStore,
+  opts?: Partial<{ extractFn: ExtractFn }>
+): ParseRequestFn<T> => {
   const finalOpts = Object.assign({ extractFn: defaultExtractFn }, opts);
 
-  return async function parse(request: Request): Promise<ParsedResult | ParsedError> {
+  return async function parse(request) {
     let extracted: ExtractedResponse;
     try {
       extracted = await finalOpts.extractFn(request);
