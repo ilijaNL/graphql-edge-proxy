@@ -1,6 +1,6 @@
 import { createHandler } from '@graphql-edge/proxy';
 import { createSignatureParseFn } from '@graphql-edge/proxy/lib/signature';
-import { createReportHooks, createReport, ReportContext } from '@graphql-edge/proxy/lib/reporting';
+import { createReportHooks, createReport } from '@graphql-edge/proxy/lib/reporting';
 
 // signature parse fn
 const parseFn = createSignatureParseFn({
