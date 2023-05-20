@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.9
+
+### Patch Changes
+
+- Catch fetch & json() errors
+
 ## 0.0.8
 
 ### Patch Changes

@@ -106,6 +106,26 @@ tap.test('happy path with defaults', async (t) => {
   t.same(await resp.json(), { message: 'cannot parse response' });
 });
 
+tap.test('origin not reachable', async (t) => {
+  const handler = createHandler('http://test.blabaladwadwaadwad', async (req) => {
+    return {
+      query: 'q1',
+      headers: req.headers,
+    };
+  });
+
+  const resp = await handler(
+    new Request('http://test.blabaladwadwaadwad', {
+      method: 'POST',
+      headers: new Headers({ 'x-host': 'localhost' }),
+      body: Buffer.from('input'),
+    }),
+    { prop: 'ctx' }
+  );
+  t.equal(resp.status, 500);
+  t.same(await resp.json(), { message: 'getaddrinfo ENOTFOUND test.blabaladwadwaadwad' });
+});
+
 tap.test('correctly sets headers', async (t) => {
   const q = 'query me { me }';
   const req = new Request('http://test.localhost', {

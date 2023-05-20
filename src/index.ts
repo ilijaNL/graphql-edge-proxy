@@ -223,7 +223,7 @@ export type CreateHandlerOpts<TParsedRequest extends ParsedRequest, Context> = {
 export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
   originURL: string,
   parseRequest: ParseRequestFn<TParsedRequest, Context>,
-  opts: Partial<CreateHandlerOpts<TParsedRequest, Context>>
+  opts?: Partial<CreateHandlerOpts<TParsedRequest, Context>>
 ) => {
   const proxyConfig = { originURL: originURL };
   const finalOpts = Object.assign<
@@ -236,7 +236,7 @@ export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
       proxy: (parsed) => proxy(parsed, proxyConfig),
       hooks: {},
     },
-    opts
+    opts ?? {}
   );
 
   return async function handle(request: Request, ctx: Context) {
@@ -244,7 +244,12 @@ export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
 
     finalOpts?.hooks?.onRequestParsed?.(parsed, ctx);
 
-    const proxyResponse = await finalOpts.proxy(parsed, ctx);
+    let proxyResponse: Response;
+    try {
+      proxyResponse = await finalOpts.proxy(parsed, ctx);
+    } catch (e: any) {
+      return createErrorResponse(e.message ?? 'internal error', 500);
+    }
 
     finalOpts?.hooks?.onProxied?.(proxyResponse, ctx);
 
@@ -257,7 +262,13 @@ export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
       return createErrorResponse('cannot parse response', 406);
     }
 
-    const payload: OriginGraphQLResponse = await proxyResponse.json();
+    let payload: OriginGraphQLResponse;
+
+    try {
+      payload = await proxyResponse.json();
+    } catch (e) {
+      return createErrorResponse('cannot parse response', 406);
+    }
 
     finalOpts.hooks.onResponseParsed?.(payload, ctx);
 
