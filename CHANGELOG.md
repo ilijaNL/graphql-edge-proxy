@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.10
+
+### Patch Changes
+
+- Set errors on report when statusCode >= 400
+
 ## 0.0.9
 
 ### Patch Changes

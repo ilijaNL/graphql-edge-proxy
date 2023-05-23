@@ -1,7 +1,7 @@
 import tap from 'tap';
 import { createReportHooks, createReport, kReportParsed, kReportProxy, kReportResponse } from '../src/reporting';
 import { Headers, Response } from '@whatwg-node/fetch';
-import { createParseError } from '../src';
+import { createErrorResponse, createParseError } from '../src';
 
 tap.test('happy path', async (t) => {
   const hooks = createReportHooks();
@@ -127,11 +127,11 @@ tap.test('no hooks called', async (t) => {
   t.equal(collected, null);
 });
 
-tap.test('happy path with errors', async (t) => {
+tap.test('happy path with http errors', async (t) => {
   const hooks = createReportHooks();
   const report = createReport();
 
-  hooks.onProxied(new Response(), report.context);
+  hooks.onProxied(createErrorResponse('not-found', 500), report.context);
 
   hooks.onRequestParsed(
     { headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } },
@@ -141,33 +141,19 @@ tap.test('happy path with errors', async (t) => {
   hooks.onResponseParsed(
     {
       data: [],
-      errors: [{ test: 'abc' }],
     },
     report.context
   );
 
-  const respPayload = Buffer.from(
-    JSON.stringify({
-      data: [],
-      errors: [{ test: 'abc' }],
-    })
-  );
+  const resp = createErrorResponse('not-found', 500);
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const collected = (await report.collect(
-    new Response(respPayload, {
-      status: 200,
-      headers: new Headers({
-        'content-type': 'application/json',
-      }),
-    })
-  ))!;
+  const collected = (await report.collect(resp))!;
 
   t.same(collected.ok, false);
-  t.same(collected.response_size, respPayload.byteLength);
   t.same(collected.operationName, 'op1');
-  t.same(collected.originStatus, 200);
-  t.same(collected.errors, [{ test: 'abc' }]);
+  t.same(collected.originStatus, 500);
+  t.same(collected.errors, [{ message: 'not-found' }]);
 });
 
 tap.test('happy path with response_map', async (t) => {

@@ -1,8 +1,9 @@
 import { Hooks, OriginGraphQLResponse, ParsedError, ParsedRequest, errorMessageSymbol, isParsedError } from '.';
+import { TextDecoder } from '@whatwg-node/fetch';
 
 export type Report = {
   /**
-   * GraphQL errors coming from the origin
+   * GraphQL Errors or http errors
    */
   errors?: Array<any>;
   ok: boolean;
@@ -147,6 +148,17 @@ export type ReportOptions = {
   calculateResponse: boolean;
 };
 
+function responseTextToError(responseText: string, status: number) {
+  try {
+    return JSON.parse(responseText);
+  } catch (_e) {
+    return {
+      message: 'cannot parse error: ' + status,
+      status: status,
+    };
+  }
+}
+
 export const createReport = (opts?: Partial<ReportOptions>) => {
   const options = Object.assign<ReportOptions, Partial<ReportOptions> | undefined>(
     {
@@ -168,9 +180,10 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
     const proxyResponse = ctx[kReportProxy];
     const gqlResponse = ctx[kReportResponse];
 
-    const responseSize = +(
-      clonedResponse.headers.get('content-size') ?? (await clonedResponse.arrayBuffer()).byteLength
-    );
+    const buffer = await clonedResponse.arrayBuffer();
+    const responseText = new TextDecoder().decode(buffer);
+
+    const responseSize = +(clonedResponse.headers.get('content-size') ?? buffer.byteLength);
 
     if (!parsedRequest) {
       return null;
@@ -197,7 +210,8 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
 
     return {
       ok:
-        clonedResponse.status === 200 &&
+        clonedResponse.status >= 200 &&
+        clonedResponse.status < 400 &&
         gqlResponse?.resp.data !== undefined &&
         (gqlResponse.resp.errors === undefined ||
           (Array.isArray(gqlResponse.resp.errors) && gqlResponse.resp.errors.length === 0)),
@@ -207,6 +221,8 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
       errors:
         gqlResponse && Array.isArray(gqlResponse.resp.errors) && gqlResponse.resp.errors.length > 0
           ? gqlResponse.resp.errors
+          : clonedResponse.status > 400
+          ? [responseTextToError(responseText, clonedResponse.status)]
           : undefined,
       operationName: parsedRequest.parsed.operationName,
       originStatus: proxyResponse?.response.status ?? undefined,

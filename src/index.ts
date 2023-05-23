@@ -72,25 +72,13 @@ export type ProxyConfig = {
   originFetch?: OriginRequestFn;
 };
 
-// export type Report = {
-//   timings: {
-//     origin_start_request?: number;
-//     origin_end_request?: number;
-//     origin_end_parsing_request?: number;
-//   };
-//   originResponse?: Response;
-//   originRequest?: ParsedRequest;
-//   ok: boolean;
-//   errors?: Array<{ message: string } & Record<string, any>>;
-//   appliedRules?: Partial<Config['responseRules']>;
-// };
-
 export function createErrorResponse(message: string, code: number): Response {
+  const headers = new Headers([['content-type', 'application/json']]);
   return new Response(
     JSON.stringify({
       message: message,
     }),
-    { status: code }
+    { status: code, headers }
   );
 }
 
@@ -148,7 +136,6 @@ export async function parseOriginResponse(
 
   resultHeader.delete('content-encoding');
   resultHeader.delete('content-length');
-
   resultHeader.set('content-type', 'application/json; charset=utf-8');
 
   return new Response(JSON.stringify(gqlResponse), {
