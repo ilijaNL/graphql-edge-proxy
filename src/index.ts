@@ -136,6 +136,8 @@ export async function parseOriginResponse(
 
   resultHeader.delete('content-encoding');
   resultHeader.delete('content-length');
+  resultHeader.delete('transfer-encoding');
+
   resultHeader.set('content-type', 'application/json; charset=utf-8');
 
   return new Response(JSON.stringify(gqlResponse), {

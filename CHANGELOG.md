@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 0.0.11
+
+### Patch Changes
+
+- Remove transfer encoding header from the parseOrigin
+
 ## 0.0.10
 
 ### Patch Changes
