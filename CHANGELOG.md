@@ -1,5 +1,11 @@
 # @graphql-edge/proxy
 
+## 1.0.0
+
+### Major Changes
+
+- Ability to use individual functions to handle a request
+
 ## 0.0.11
 
 ### Patch Changes
