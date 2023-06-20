@@ -36,7 +36,7 @@ tap.test('no hash header set', async (t) => {
     }),
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], 'signature not defined');
 });
@@ -52,7 +52,7 @@ tap.test('no query defined on body', async (t) => {
     }),
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], 'Missing query in body');
 });
@@ -68,7 +68,7 @@ tap.test('not valid document provided', async (t) => {
     }),
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
 
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], 'cannot parse query');
@@ -85,7 +85,7 @@ tap.test('not valid hash provided', async (t) => {
     }),
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], `Invalid ${OPERATION_HEADER_KEY} header`);
 });
@@ -103,7 +103,7 @@ tap.test('signed with diff secret', async (t) => {
     }),
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], `Invalid ${OPERATION_HEADER_KEY} header`);
 });
@@ -130,7 +130,7 @@ tap.test('signed with custom algorithms', async (t) => {
     },
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], `Invalid ${OPERATION_HEADER_KEY} header`);
 });
@@ -146,7 +146,7 @@ tap.test('not valid json body', async (t) => {
     body: 'wawdaw',
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed[errorCodeSymbol], 403);
   t.same(parsed[errorMessageSymbol], 'not valid body');
 });
@@ -173,7 +173,7 @@ tap.test('signed with custom algorithms', async (t) => {
     },
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed.query, 'query me {me}');
   t.equal(parsed.isPassthrough, false);
 });
@@ -193,7 +193,7 @@ tap.test('skips signature when sign_secret is null', async (t) => {
     passThroughHash: '123',
   });
 
-  const parsed: any = await parseFn(req, {});
+  const parsed: any = await parseFn(req);
   t.equal(parsed.query, 'query me { me }');
   t.equal(parsed.isPassthrough, false);
 });
@@ -211,7 +211,7 @@ tap.test('pass through', async (t) => {
       }),
     });
 
-    const resp = await proxy(await parseFn(req, {}), {
+    const resp = await proxy(await parseFn(req), {
       ...defaultConfig,
       async originFetch() {
         return new Response(Buffer.from('works'), {
@@ -238,7 +238,7 @@ tap.test('pass through', async (t) => {
       }),
     });
 
-    const resp = await proxy(await parseFn(req, {}), {
+    const resp = await proxy(await parseFn(req), {
       ...defaultConfig,
       async originFetch() {
         return new Response(Buffer.from('works'), {

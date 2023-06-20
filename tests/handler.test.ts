@@ -1,5 +1,14 @@
 import tap from 'tap';
-import { ProxyConfig, ParseOptions, createHandler, parseOriginResponse, proxy, ParsedRequest } from '../src';
+import {
+  ProxyConfig,
+  ParseOptions,
+  createHandler,
+  parseOriginResponse,
+  proxy,
+  ParsedRequest,
+  createGraphQLProxy,
+  isParsedError,
+} from '../src';
 import { Headers, Response, Request } from '@whatwg-node/fetch';
 
 const defaultConfig: ProxyConfig = {
@@ -12,7 +21,6 @@ const parseOptions: ParseOptions = {
 };
 
 tap.test('happy path', async (t) => {
-  t.plan(13);
   const proxyResponse = new Response(JSON.stringify({ data: { works: true } }), {
     status: 200,
     headers: new Headers({
@@ -20,10 +28,9 @@ tap.test('happy path', async (t) => {
     }),
   });
 
-  const handler = createHandler<ParsedRequest, { prop: string }>(
+  const handler = createHandler<ParsedRequest>(
     defaultConfig.originURL,
-    async (req, ctx) => {
-      t.equal(ctx.prop, 'ctx');
+    async (req) => {
       t.equal(await req.text(), 'input');
       return {
         query: 'q',
@@ -32,32 +39,15 @@ tap.test('happy path', async (t) => {
       };
     },
     {
-      proxy: async (req, ctx) => {
-        t.equal(ctx.prop, 'ctxx');
+      proxy: async (req) => {
         t.equal((req as any).query, 'q');
         return proxyResponse;
       },
-      formatOriginResp: async (gql, _response, ctx) => {
+      formatOriginResp: async (gql) => {
         t.same(gql.data, { works: true });
-        t.equal(ctx.prop, 'ctxx');
         return new Response('response', {
           status: 200,
         });
-      },
-      hooks: {
-        onRequestParsed(parsed, ctx) {
-          t.same((parsed as any).query, 'q');
-          t.equal(ctx.prop, 'ctx');
-          ctx.prop = 'ctxx';
-        },
-        onProxied(resp, ctx) {
-          t.equal(resp, proxyResponse);
-          t.equal(ctx.prop, 'ctxx');
-        },
-        onResponseParsed(originResponse, ctx) {
-          t.same(originResponse.data, { works: true });
-          t.equal(ctx.prop, 'ctxx');
-        },
       },
     }
   );
@@ -66,16 +56,17 @@ tap.test('happy path', async (t) => {
     new Request('http://test.localhost', {
       method: 'POST',
       body: Buffer.from('input'),
-    }),
-    { prop: 'ctx' }
+    })
   );
   t.equal(await resp.text(), 'response');
 });
 
 tap.test('happy path with defaults', async (t) => {
-  t.plan(3);
-
-  const handler = createHandler(
+  const {
+    parseRequest: parse,
+    proxy,
+    parseResponse: parseProxy,
+  } = createGraphQLProxy(
     'http://test.localhost',
     async (req) => {
       return {
@@ -85,25 +76,26 @@ tap.test('happy path with defaults', async (t) => {
     },
     {
       proxy: async () => new Response('ok'),
-      hooks: {
-        onRequestParsed(parsed) {
-          const p = parsed as ParsedRequest;
-          t.equal(p.headers.get('x-host'), 'localhost');
-          t.equal(p.query, 'q1');
-        },
-      },
     }
   );
 
-  const resp = await handler(
+  const parsed = await parse(
     new Request('http://test.localhost', {
       method: 'POST',
       headers: new Headers({ 'x-host': 'localhost' }),
       body: Buffer.from('input'),
-    }),
-    { prop: 'ctx' }
+    })
   );
-  t.same(await resp.json(), { message: 'cannot parse response' });
+
+  if (isParsedError(parsed)) {
+    t.fail('cannot parse');
+    return;
+  }
+
+  const proxyResp = await proxy(parsed);
+  const resp = await parseProxy(proxyResp);
+
+  t.equal(resp, null);
 });
 
 tap.test('origin not reachable', async (t) => {
@@ -119,8 +111,7 @@ tap.test('origin not reachable', async (t) => {
       method: 'POST',
       headers: new Headers({ 'x-host': 'localhost' }),
       body: Buffer.from('input'),
-    }),
-    { prop: 'ctx' }
+    })
   );
   t.equal(resp.status, 500);
   t.same(await resp.json(), { message: 'getaddrinfo ENOTFOUND test.blabaladwadwaadwad' });

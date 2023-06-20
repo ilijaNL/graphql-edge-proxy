@@ -1,4 +1,4 @@
-import { Hooks, OriginGraphQLResponse, ParsedError, ParsedRequest, errorMessageSymbol, isParsedError } from '.';
+import { OriginGraphQLResponse, ParsedError, ParsedRequest, errorMessageSymbol, isParsedError } from '.';
 import { TextDecoder } from '@whatwg-node/fetch';
 
 export type Report = {
@@ -63,30 +63,6 @@ export type ReportContext = {
     resp: OriginGraphQLResponse;
   };
 };
-
-export function createReportHooks<TContext extends ReportContext>(): Hooks<ParsedRequest, TContext> {
-  return {
-    onRequestParsed(parsed, ctx) {
-      ctx[kReportParsed] = {
-        parsed: parsed,
-        ts: Date.now(),
-      };
-      //
-    },
-    onProxied(resp, ctx) {
-      ctx[kReportProxy] = {
-        ts: Date.now(),
-        response: resp.clone(),
-      };
-    },
-    onResponseParsed(gqlResponse, ctx) {
-      ctx[kReportResponse] = {
-        resp: gqlResponse,
-        ts: Date.now(),
-      };
-    },
-  };
-}
 
 function calculateResponse(item: any, path: string, map: Map<string, number>) {
   // we only don't count undefines
@@ -159,7 +135,9 @@ function responseTextToError(responseText: string, status: number) {
   }
 }
 
-export const createReport = (opts?: Partial<ReportOptions>) => {
+export type ReportCollector = ReturnType<typeof createReportCollector>;
+
+export const createReportCollector = (opts?: Partial<ReportOptions>) => {
   const options = Object.assign<ReportOptions, Partial<ReportOptions> | undefined>(
     {
       calculateResponse: true,
@@ -169,12 +147,12 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
   const started_at = Date.now();
   const context = createEmptyReportContext();
 
-  async function collect(response: Response, finalContext?: ReportContext): Promise<Report | null> {
+  async function collect(response: Response): Promise<Report | null> {
     const collect_at = Date.now();
     const total = collect_at - started_at;
     const clonedResponse = response.clone();
 
-    const ctx = finalContext ?? context;
+    const ctx = context;
 
     const parsedRequest = ctx[kReportParsed];
     const proxyResponse = ctx[kReportProxy];
@@ -239,5 +217,24 @@ export const createReport = (opts?: Partial<ReportOptions>) => {
   return {
     context,
     collect,
+    onRequestParsed(parsed: ParsedRequest | ParsedError) {
+      context[kReportParsed] = {
+        parsed: parsed,
+        ts: Date.now(),
+      };
+      //
+    },
+    onProxied(resp: Response) {
+      context[kReportProxy] = {
+        ts: Date.now(),
+        response: resp.clone(),
+      };
+    },
+    onResponseParsed(gqlResponse: OriginGraphQLResponse) {
+      context[kReportResponse] = {
+        resp: gqlResponse,
+        ts: Date.now(),
+      };
+    },
   };
 };
