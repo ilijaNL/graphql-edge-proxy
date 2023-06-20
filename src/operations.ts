@@ -149,10 +149,10 @@ export type ParsedResult = ParsedRequest & { def: OpsDef };
  * Create parse function where every query is stored
  *
  */
-export const createOperationParseFn = <T = unknown>(
+export const createOperationParseFn = (
   operationStore: OperationStore,
   opts?: Partial<{ extractFn: ExtractFn }>
-): ParseRequestFn<ParsedResult, T> => {
+): ParseRequestFn<ParsedResult> => {
   const finalOpts = Object.assign({ extractFn: defaultExtractFn }, opts);
 
   return async function parse(request) {

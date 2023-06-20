@@ -1,9 +1,8 @@
 import { NextFetchEvent, NextRequest } from 'next/server';
-import { createHandler, isParsedError } from '@graphql-edge/proxy';
-import { createReportHooks, createReport, ReportContext } from '@graphql-edge/proxy/lib/reporting';
+import { createErrorResponse, createGraphQLProxy, createParseErrorResponse, isParsedError } from '@graphql-edge/proxy';
+import { ReportCollector, createReportCollector } from '@graphql-edge/proxy/lib/reporting';
 import {
   GeneratedOperation,
-  OpsDef,
   ValidationError,
   createOperationParseFn,
   createOperationStore,
@@ -24,42 +23,49 @@ export const config = {
   runtime: 'edge',
 };
 
-const reportHooks = createReportHooks();
+const proxy = createGraphQLProxy('https://countries.trevorblades.com', createOperationParseFn(store), {});
 
-type Context = ReportContext & { def: OpsDef | null };
+const handle = async (request: Request, collector: ReportCollector) => {
+  const parsed = await proxy.parseRequest(request);
 
-const handler = createHandler('https://countries.trevorblades.com', createOperationParseFn(store), {
-  hooks: {
-    // use hook to assign data from parsed request to the context, which will be used for caching
-    onRequestParsed(parsed, ctx: Context) {
-      if (!isParsedError(parsed)) {
-        ctx.def = parsed.def;
-      }
-      reportHooks.onRequestParsed(parsed, ctx);
-    },
-    onProxied: reportHooks.onProxied,
-    onResponseParsed: reportHooks.onResponseParsed,
-  },
-});
+  collector?.onRequestParsed(parsed);
 
-export default async function MyEdgeFunction(request: NextRequest, event: NextFetchEvent) {
-  event.passThroughOnException();
-  const report = createReport();
+  if (isParsedError(parsed)) {
+    return createParseErrorResponse(parsed);
+  }
 
-  // this is mutable object
-  const context: Context = Object.assign(report.context, {
-    def: null,
-  });
-  const response = await handler(request, context);
+  const proxyResponse = await proxy.proxy(parsed);
+  collector?.onProxied(proxyResponse);
+  if (!proxyResponse.ok) {
+    return proxyResponse;
+  }
 
-  const cacheTTL = context.def?.behaviour.ttl;
+  const parsedResult = await proxy.parseResponse(proxyResponse);
+
+  if (!parsedResult) {
+    return createErrorResponse('cannot parse response', 406);
+  }
+
+  collector?.onResponseParsed(parsedResult);
+
+  const response = await proxy.formatResponse(parsedResult, proxyResponse);
+
+  const cacheTTL = parsed.def?.behaviour.ttl;
 
   if (cacheTTL) {
     response.headers.set('Cache-Control', `public, s-maxage=${cacheTTL}, stale-while-revalidate=${cacheTTL}`);
   }
 
+  return response;
+};
+
+export default async function MyEdgeFunction(request: NextRequest, event: NextFetchEvent) {
+  event.passThroughOnException();
+  const collector = createReportCollector();
+  const response = await handle(request, collector);
+
   event.waitUntil(
-    report.collect(response, context).then((report) => {
+    collector.collect(response).then((report) => {
       // eslint-disable-next-line no-console
       report && console.log({ report: JSON.stringify(report, null, 2) });
     })

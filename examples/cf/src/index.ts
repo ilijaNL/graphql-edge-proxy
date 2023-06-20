@@ -1,6 +1,6 @@
 import { createHandler } from '@graphql-edge/proxy';
 import { createSignatureParseFn } from '@graphql-edge/proxy/lib/signature';
-import { createReportHooks, createReport } from '@graphql-edge/proxy/lib/reporting';
+import { createReportCollector } from '@graphql-edge/proxy/lib/reporting';
 
 // signature parse fn
 const parseFn = createSignatureParseFn({
@@ -10,20 +10,16 @@ const parseFn = createSignatureParseFn({
   signSecret: 'some-secret',
 });
 
-const reportHooks = createReportHooks();
-
-const handler = createHandler('https://countries.trevorblades.com', parseFn, {
-  hooks: reportHooks,
-});
+const handler = createHandler('https://countries.trevorblades.com', parseFn, {});
 
 export default {
   async fetch(request: Request, _env: unknown, ctx: ExecutionContext): Promise<Response> {
     ctx.passThroughOnException();
-    const { collect, context } = createReport();
-    const response = await handler(request, context);
+    const reportCollector = createReportCollector();
+    const response = await handler(request, reportCollector);
 
     ctx.waitUntil(
-      collect(response, context).then((report) => {
+      reportCollector.collect(response).then((report) => {
         // eslint-disable-next-line no-console
         report && console.log({ report: JSON.stringify(report, null, 2) });
       })

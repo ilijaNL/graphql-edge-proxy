@@ -1,11 +1,10 @@
 import tap from 'tap';
-import { createReportHooks, createReport, kReportParsed, kReportProxy, kReportResponse } from '../src/reporting';
+import { createReportCollector, kReportParsed, kReportProxy, kReportResponse } from '../src/reporting';
 import { Headers, Response } from '@whatwg-node/fetch';
 import { createErrorResponse, createParseError } from '../src';
 
 tap.test('happy path', async (t) => {
-  const hooks = createReportHooks();
-  const report = createReport();
+  const report = createReportCollector();
 
   t.same(report.context, {
     [kReportParsed]: null,
@@ -13,19 +12,13 @@ tap.test('happy path', async (t) => {
     [kReportResponse]: null,
   });
 
-  hooks.onProxied(new Response(), report.context);
+  report.onProxied(new Response());
 
-  hooks.onRequestParsed(
-    { headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } },
-    report.context
-  );
+  report.onRequestParsed({ headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } });
 
-  hooks.onResponseParsed(
-    {
-      data: [],
-    },
-    report.context
-  );
+  report.onResponseParsed({
+    data: [],
+  });
 
   const respPayload = Buffer.from(
     JSON.stringify({
@@ -56,8 +49,7 @@ tap.test('happy path', async (t) => {
 });
 
 tap.test('parse error', async (t) => {
-  const report = createReport();
-  const reportHooks = createReportHooks();
+  const report = createReportCollector();
 
   t.same(report.context, {
     [kReportParsed]: null,
@@ -74,7 +66,7 @@ tap.test('parse error', async (t) => {
     })
   );
 
-  reportHooks.onRequestParsed(createParseError(404, 'test'), report.context);
+  report.onRequestParsed(createParseError(404, 'test'));
 
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const collected = (await report.collect(
@@ -98,7 +90,7 @@ tap.test('parse error', async (t) => {
 });
 
 tap.test('no hooks called', async (t) => {
-  const report = createReport();
+  const report = createReportCollector();
 
   t.same(report.context, {
     [kReportParsed]: null,
@@ -128,22 +120,15 @@ tap.test('no hooks called', async (t) => {
 });
 
 tap.test('happy path with http errors', async (t) => {
-  const hooks = createReportHooks();
-  const report = createReport();
+  const report = createReportCollector();
 
-  hooks.onProxied(createErrorResponse('not-found', 500), report.context);
+  report.onProxied(createErrorResponse('not-found', 500));
 
-  hooks.onRequestParsed(
-    { headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } },
-    report.context
-  );
+  report.onRequestParsed({ headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } });
 
-  hooks.onResponseParsed(
-    {
-      data: [],
-    },
-    report.context
-  );
+  report.onResponseParsed({
+    data: [],
+  });
 
   const resp = createErrorResponse('not-found', 500);
 
@@ -157,15 +142,11 @@ tap.test('happy path with http errors', async (t) => {
 });
 
 tap.test('happy path with response_map', async (t) => {
-  const hooks = createReportHooks();
-  const report = createReport();
+  const report = createReportCollector();
 
-  hooks.onProxied(new Response(), report.context);
+  report.onProxied(new Response());
 
-  hooks.onRequestParsed(
-    { headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } },
-    report.context
-  );
+  report.onRequestParsed({ headers: new Headers(), query: 'q', operationName: 'op1', variables: { v1: true } });
 
   const data = {
     itemA: {
@@ -186,12 +167,9 @@ tap.test('happy path with response_map', async (t) => {
     ],
   };
 
-  hooks.onResponseParsed(
-    {
-      data: data,
-    },
-    report.context
-  );
+  report.onResponseParsed({
+    data: data,
+  });
 
   const respPayload = Buffer.from(
     JSON.stringify({

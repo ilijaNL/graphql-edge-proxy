@@ -46,7 +46,7 @@ export type ParsedResponse = ParsedRequest & {
 /**
  * Creates a parse function which validates a request against a signature header or a passthrough header
  */
-export const createSignatureParseFn = <T = unknown>(config: {
+export const createSignatureParseFn = (config: {
   passThroughHash: string;
   signSecret:
     | string
@@ -60,7 +60,7 @@ export const createSignatureParseFn = <T = unknown>(config: {
         algorithm: SignignAlgorithm;
       };
   maxTokens: number;
-}): ParseRequestFn<ParsedRequest, T> => {
+}): ParseRequestFn<ParsedRequest> => {
   return async function parseRequest(request) {
     const isPassThrough = await isPassthroughRequest(request, config.passThroughHash);
     const hashHeader = getOperationHashFromHeader(request);

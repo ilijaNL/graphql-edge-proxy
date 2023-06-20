@@ -1,4 +1,5 @@
 import { fetch, Request, Response, Headers } from '@whatwg-node/fetch';
+import { ReportCollector } from './reporting';
 
 export type ParsedRequest<Vars = Record<string, any>> = {
   query: string;
@@ -71,6 +72,10 @@ export type ProxyConfig = {
    */
   originFetch?: OriginRequestFn;
 };
+
+export function createParseErrorResponse(error: ParsedError) {
+  return createErrorResponse(error[errorMessageSymbol], error[errorCodeSymbol]);
+}
 
 export function createErrorResponse(message: string, code: number): Response {
   const headers = new Headers([['content-type', 'application/json']]);
@@ -179,17 +184,10 @@ export async function proxy(parsedRequest: ParsedRequest | ParsedError, config: 
   return originResponse;
 }
 
-export type ParseRequestFn<TParsed extends ParsedRequest, Context> = (
-  request: Request,
-  context: Context
-) => Promise<TParsed | ParsedError>;
+export type ParseRequestFn<TParsed extends ParsedRequest> = (request: Request) => Promise<TParsed | ParsedError>;
 
-export type ProxyFn<Context> = (parsed: ParsedRequest | ParsedError, context: Context) => Promise<Response>;
-export type FormatOriginRespFn<Context> = (
-  result: OriginGraphQLResponse,
-  originResponse: Response,
-  context: Context
-) => Promise<Response>;
+export type ProxyFn = (parsed: ParsedRequest) => Promise<Response>;
+export type FormatOriginRespFn = (result: OriginGraphQLResponse, originResponse: Response) => Promise<Response>;
 
 export type OriginGraphQLResponse = {
   data?: any;
@@ -197,58 +195,80 @@ export type OriginGraphQLResponse = {
   errors?: Array<any>;
 };
 
-export type Hooks<TParsedRequest extends ParsedRequest, Context> = {
-  onRequestParsed: (parsed: TParsedRequest | ParsedError, ctx: Context) => void;
-  onProxied: (resp: Response, ctx: Context) => void;
-  onResponseParsed: (gqlResponse: OriginGraphQLResponse, ctx: Context) => void;
-};
-
-export type CreateHandlerOpts<TParsedRequest extends ParsedRequest, Context> = {
-  proxy: ProxyFn<Context>;
-  formatOriginResp: FormatOriginRespFn<Context>;
-  hooks: Partial<Hooks<TParsedRequest, Context>>;
-};
-
-export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
+export const createHandler = <TParsedRequest extends ParsedRequest>(
   originURL: string,
-  parseRequest: ParseRequestFn<TParsedRequest, Context>,
-  opts?: Partial<CreateHandlerOpts<TParsedRequest, Context>>
+  parseRequest: ParseRequestFn<TParsedRequest>,
+  opts?: Partial<CreateProxyOpts>
 ) => {
-  const proxyConfig = { originURL: originURL };
-  const finalOpts = Object.assign<
-    CreateHandlerOpts<TParsedRequest, Context>,
-    Partial<CreateHandlerOpts<TParsedRequest, Context>>
-  >(
-    {
-      formatOriginResp: (parsedResponse, response) =>
-        parseOriginResponse(parsedResponse, response, { errorMasking: '[Suggestion hidden]', removeExtensions: false }),
-      proxy: (parsed) => proxy(parsed, proxyConfig),
-      hooks: {},
-    },
-    opts ?? {}
-  );
+  const _proxy = createGraphQLProxy(originURL, parseRequest, opts);
 
-  return async function handle(request: Request, ctx: Context) {
-    const parsed = await parseRequest(request, ctx);
+  return async function handle(request: Request, collector?: ReportCollector) {
+    const parsed = await _proxy.parseRequest(request);
 
-    finalOpts?.hooks?.onRequestParsed?.(parsed, ctx);
-
-    let proxyResponse: Response;
-    try {
-      proxyResponse = await finalOpts.proxy(parsed, ctx);
-    } catch (e: any) {
-      return createErrorResponse(e.message ?? 'internal error', 500);
+    collector?.onRequestParsed(parsed);
+    if (isParsedError(parsed)) {
+      return createParseErrorResponse(parsed);
     }
 
-    finalOpts?.hooks?.onProxied?.(proxyResponse, ctx);
-
+    const proxyResponse = await _proxy.proxy(parsed);
+    collector?.onProxied(proxyResponse);
     if (!proxyResponse.ok) {
       return proxyResponse;
     }
 
+    const parsedResult = await _proxy.parseResponse(proxyResponse);
+
+    if (!parsedResult) {
+      return createErrorResponse('cannot parse response', 406);
+    }
+
+    collector?.onResponseParsed(parsedResult);
+
+    const result = await _proxy.formatResponse(parsedResult, proxyResponse);
+
+    return result;
+  };
+};
+
+export type CreateProxyOpts = {
+  proxy: ProxyFn;
+  formatOriginResp: FormatOriginRespFn;
+};
+
+export const createGraphQLProxy = <TParsedRequest extends ParsedRequest>(
+  originURL: string,
+  parseRequest: ParseRequestFn<TParsedRequest>,
+  opts?: Partial<CreateProxyOpts>
+) => {
+  const proxyConfig = { originURL: originURL };
+  const finalOpts = Object.assign<CreateProxyOpts, Partial<CreateProxyOpts>>(
+    {
+      formatOriginResp: (parsedResponse, response) =>
+        parseOriginResponse(parsedResponse, response, { errorMasking: '[Suggestion hidden]', removeExtensions: false }),
+      proxy: (parsed) => proxy(parsed, proxyConfig),
+    },
+    opts ?? {}
+  );
+
+  async function _proxy(parsed: ParsedRequest<Record<string, any>>) {
+    let proxyResponse: Response;
+    try {
+      proxyResponse = await finalOpts.proxy(parsed);
+    } catch (e: any) {
+      return createErrorResponse(e.message ?? 'internal error', 500);
+    }
+
+    return proxyResponse;
+  }
+
+  async function _parseProxy(proxyResponse: Response): Promise<OriginGraphQLResponse | null> {
+    if (!proxyResponse.ok) {
+      return null;
+    }
+
     const contentType = proxyResponse.headers.get('content-type') ?? '';
     if (!(contentType.includes('application/json') || contentType.includes('application/graphql-response+json'))) {
-      return createErrorResponse('cannot parse response', 406);
+      return null;
     }
 
     let payload: OriginGraphQLResponse;
@@ -256,11 +276,16 @@ export const createHandler = <TParsedRequest extends ParsedRequest, Context>(
     try {
       payload = await proxyResponse.json();
     } catch (e) {
-      return createErrorResponse('cannot parse response', 406);
+      return null;
     }
 
-    finalOpts.hooks.onResponseParsed?.(payload, ctx);
+    return payload;
+  }
 
-    return finalOpts.formatOriginResp(payload, proxyResponse, ctx);
+  return {
+    parseRequest: parseRequest,
+    proxy: _proxy,
+    parseResponse: _parseProxy,
+    formatResponse: finalOpts.formatOriginResp,
   };
 };
